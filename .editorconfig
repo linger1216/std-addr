@@ -1,0 +1,29 @@
+# EditorConfig - 代码风格统一配置
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# 缩进：空格，2个字符
+indent_style = space
+indent_size = 2
+
+# Python
+[*.py]
+indent_size = 2
+
+# JavaScript/TypeScript/Vue
+[*.{js,ts,vue}]
+indent_size = 2
+
+# JSON
+[*.json]
+indent_size = 2
+
+# Markdown
+[*.md]
+trim_trailing_whitespace = false
