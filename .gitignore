@@ -88,6 +88,9 @@ $RECYCLE.BIN/
 .cursor/
 .aider*
 
+# serena (local MCP cache)
+.serena/
+
 # package manager
 yarn.lock
 package-lock.json

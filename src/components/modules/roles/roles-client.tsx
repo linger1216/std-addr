@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Table,
   TableBody,
@@ -77,7 +79,7 @@ export function RolesClient() {
   const [checked, setChecked] = useState<string[]>([]);
   const { data: roleMenuIds } = api.role.menuIds.useQuery(
     { roleId: authRoleId ?? "" },
-    { enabled: !!authRoleId },
+    { enabled: !!authRoleId }
   );
   useEffect(() => {
     if (roleMenuIds) setChecked(roleMenuIds);
@@ -117,18 +119,24 @@ export function RolesClient() {
 
   function toggleMenu(id: string) {
     setChecked((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
 
   const tree = buildMenuTree(allMenus ?? []);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">角色管理</h1>
-        <Button onClick={openCreate}>新建角色</Button>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title="角色管理"
+        description="定义角色、绑定菜单权限"
+        actions={
+          <Button onClick={openCreate}>
+            <Plus className="size-4" />
+            新建角色
+          </Button>
+        }
+      />
 
       <Table>
         <TableHeader>
@@ -144,7 +152,7 @@ export function RolesClient() {
           {isLoading ? (
             <TableRow>
               <TableCell colSpan={5} className="text-center text-muted-foreground">
-                加载中...
+                加载中…
               </TableCell>
             </TableRow>
           ) : roles?.length === 0 ? (
@@ -160,9 +168,9 @@ export function RolesClient() {
                 <TableCell className="font-mono text-xs">{r.code}</TableCell>
                 <TableCell>{r._count.users}</TableCell>
                 <TableCell>{r._count.menus}</TableCell>
-                <TableCell className="space-x-2 text-right">
+                <TableCell className="flex justify-end gap-2">
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     onClick={() => {
                       setChecked([]);
@@ -171,14 +179,15 @@ export function RolesClient() {
                   >
                     授权
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => openEdit(r)}>
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(r)}>
                     编辑
                   </Button>
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="sm"
+                    className="text-[#ff3b30]"
                     onClick={() => {
-                      if (confirm(`确定删除角色 ${r.name}?`)) {
+                      if (confirm(`确定删除角色 ${r.name}？`)) {
                         deleteRole.mutate({ id: r.id });
                       }
                     }}
@@ -198,8 +207,8 @@ export function RolesClient() {
           <DialogHeader>
             <DialogTitle>{form.id ? "编辑角色" : "新建角色"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
               <Label htmlFor="name">名称</Label>
               <Input
                 id="name"
@@ -207,8 +216,8 @@ export function RolesClient() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="code">标识(code)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="code">标识（code）</Label>
               <Input
                 id="code"
                 value={form.code}
@@ -216,19 +225,17 @@ export function RolesClient() {
                 disabled={!!form.id}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="description">描述</Label>
               <Input
                 id="description"
                 value={form.description}
-                onChange={(e) =>
-                  setForm({ ...form, description: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>
+            <Button variant="ghost" onClick={() => setFormOpen(false)}>
               取消
             </Button>
             <Button onClick={submitForm}>保存</Button>
@@ -245,7 +252,7 @@ export function RolesClient() {
           <DialogHeader>
             <DialogTitle>菜单授权</DialogTitle>
           </DialogHeader>
-          <div className="max-h-80 overflow-y-auto rounded-lg border p-3">
+          <div className="max-h-80 overflow-y-auto rounded-xl border border-border p-3">
             {tree.map((m) => (
               <MenuNodeCheck
                 key={m.id}
@@ -257,10 +264,7 @@ export function RolesClient() {
             ))}
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setAuthRoleId(null)}
-            >
+            <Button variant="ghost" onClick={() => setAuthRoleId(null)}>
               取消
             </Button>
             <Button
@@ -311,7 +315,7 @@ function MenuNodeCheck({
   return (
     <div>
       <div
-        className="flex items-center gap-2 py-1"
+        className="flex items-center gap-2 py-1.5"
         style={{ paddingLeft: `${depth * 20}px` }}
       >
         <Checkbox
@@ -319,7 +323,7 @@ function MenuNodeCheck({
           onCheckedChange={() => onToggle(node.id)}
           id={`menu-${node.id}`}
         />
-        <label htmlFor={`menu-${node.id}`} className="cursor-pointer text-sm">
+        <label htmlFor={`menu-${node.id}`} className="cursor-pointer text-[13px]">
           {node.name}
         </label>
       </div>

@@ -18,13 +18,16 @@ export function SidebarProvider({
   const [collapsed, setCollapsed] = useState(false);
   return (
     <div className="flex min-h-screen">
-      <Sidebar menus={menus} collapsed={collapsed} onExpand={() => setCollapsed(false)} />
+      <Sidebar
+        menus={menus}
+        collapsed={collapsed}
+        onExpand={() => setCollapsed(false)}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
-          username={username}
-          onToggle={() => setCollapsed((c) => !c)}
-        />
-        <main className="flex-1 overflow-auto bg-muted/40 p-6">{children}</main>
+        <Topbar username={username} onToggle={() => setCollapsed((c) => !c)} />
+        <main className="flex-1 bg-background px-6 pt-6 pb-8">
+          {children}
+        </main>
       </div>
     </div>
   );

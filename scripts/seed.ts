@@ -16,11 +16,25 @@ const db = new PrismaClient({ adapter });
 
 const MENUS = [
   { name: "仪表盘", path: "/", icon: "dashboard", sort: 1, children: [] },
+  { name: "标准地址库", path: "/std-addr", icon: "map", sort: 2, children: [] },
+  {
+    name: "知识库",
+    path: null,
+    icon: "trees",
+    sort: 3,
+    children: [
+      { name: "村", path: "/knowledge/village", icon: "home", sort: 1 },
+      { name: "小区", path: "/knowledge/community", icon: "building", sort: 2 },
+      { name: "兴趣点", path: "/knowledge/poi", icon: "map-pin", sort: 3 },
+      { name: "道路", path: "/knowledge/road", icon: "waypoints", sort: 4 },
+    ],
+  },
+  { name: "地址模拟", path: "/addr-sim", icon: "waypoints", sort: 4, children: [] },
   {
     name: "系统管理",
     path: null,
     icon: "settings",
-    sort: 2,
+    sort: 5,
     children: [
       { name: "用户管理", path: "/users", icon: "users", sort: 1 },
       { name: "角色管理", path: "/roles", icon: "shield", sort: 2 },

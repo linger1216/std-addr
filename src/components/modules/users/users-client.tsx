@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Table,
   TableBody,
@@ -70,6 +72,19 @@ export function UsersClient() {
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [q, setQ] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!users) return [];
+    const k = q.trim().toLowerCase();
+    if (!k) return users;
+    return users.filter(
+      (u) =>
+        u.username.toLowerCase().includes(k) ||
+        (u.name ?? "").toLowerCase().includes(k) ||
+        (u.role?.name ?? "").toLowerCase().includes(k)
+    );
+  }, [users, q]);
 
   function openCreate() {
     setForm(emptyForm);
@@ -106,10 +121,31 @@ export function UsersClient() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">用户管理</h1>
-        <Button onClick={openCreate}>新建用户</Button>
+    <div className="space-y-5">
+      <PageHeader
+        title="用户管理"
+        description="管理系统账号、昵称与角色绑定"
+        actions={
+          <Button onClick={openCreate}>
+            <Plus className="size-4" />
+            新建用户
+          </Button>
+        }
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="relative w-[280px]">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="搜索用户名/昵称/角色"
+            className="h-8 border-transparent bg-secondary pl-8 pr-3 text-[13px]"
+          />
+        </div>
+        <div className="text-[12.5px] text-muted-foreground">
+          共 {filtered.length} 人
+        </div>
       </div>
 
       <Table>
@@ -125,22 +161,22 @@ export function UsersClient() {
           {isLoading ? (
             <TableRow>
               <TableCell colSpan={4} className="text-center text-muted-foreground">
-                加载中...
+                加载中…
               </TableCell>
             </TableRow>
-          ) : users?.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <TableRow>
               <TableCell colSpan={4} className="text-center text-muted-foreground">
-                暂无用户
+                {q ? "无匹配用户" : "暂无用户"}
               </TableCell>
             </TableRow>
           ) : (
-            users?.map((u) => (
+            filtered.map((u) => (
               <TableRow key={u.id}>
                 <TableCell>{u.username}</TableCell>
-                <TableCell>{u.name ?? "-"}</TableCell>
-                <TableCell>{u.role?.name ?? "-"}</TableCell>
-                <TableCell className="space-x-2 text-right">
+                <TableCell>{u.name ?? "—"}</TableCell>
+                <TableCell>{u.role?.name ?? "—"}</TableCell>
+                <TableCell className="flex justify-end gap-2 text-right">
                   <Button variant="outline" size="sm" onClick={() => openEdit(u)}>
                     编辑
                   </Button>
@@ -148,7 +184,7 @@ export function UsersClient() {
                     variant="destructive"
                     size="sm"
                     onClick={() => {
-                      if (confirm(`确定删除用户 ${u.username}?`)) {
+                      if (confirm(`确定删除用户 ${u.username}？`)) {
                         deleteUser.mutate({ id: u.id });
                       }
                     }}
@@ -167,8 +203,8 @@ export function UsersClient() {
           <DialogHeader>
             <DialogTitle>{form.id ? "编辑用户" : "新建用户"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
               <Label htmlFor="username">用户名</Label>
               <Input
                 id="username"
@@ -177,7 +213,7 @@ export function UsersClient() {
                 disabled={!!form.id}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="name">昵称</Label>
               <Input
                 id="name"
@@ -185,9 +221,9 @@ export function UsersClient() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="password">
-                {form.id ? "密码(留空则不修改)" : "密码"}
+                {form.id ? "密码（留空则不修改）" : "密码"}
               </Label>
               <Input
                 id="password"
@@ -196,13 +232,13 @@ export function UsersClient() {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="role">角色</Label>
               <select
                 id="role"
                 value={form.roleId}
                 onChange={(e) => setForm({ ...form, roleId: e.target.value })}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-9 w-full rounded-xl border border-input bg-background px-3.5 text-sm"
               >
                 <option value="">无角色</option>
                 {roles?.map((r) => (
@@ -214,7 +250,7 @@ export function UsersClient() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
               取消
             </Button>
             <Button onClick={submit}>保存</Button>

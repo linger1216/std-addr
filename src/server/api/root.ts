@@ -1,3 +1,4 @@
+import { dashboardRouter } from "@/server/api/routers/dashboard";
 import { menuRouter } from "@/server/api/routers/menu";
 import { postRouter } from "@/server/api/routers/post";
 import { roleRouter } from "@/server/api/routers/role";
@@ -14,6 +15,7 @@ export const appRouter = createTRPCRouter({
   user: userRouter,
   role: roleRouter,
   menu: menuRouter,
+  dashboard: dashboardRouter,
 });
 
 // export type definition of API

@@ -1,14 +1,17 @@
 import { auth } from "@/server/auth";
+import { api } from "@/trpc/server";
+import { DashboardClient } from "@/components/modules/dashboard/dashboard-client";
 
 export default async function DashboardPage() {
   const session = await auth();
+  const stats = await api.dashboard.stats();
+  const recent = await api.dashboard.recentActivity();
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold">仪表盘</h1>
-      <p className="mt-2 text-muted-foreground">
-        欢迎, {session?.user?.name ?? "管理员"}
-      </p>
-    </div>
+    <DashboardClient
+      username={session?.user?.name ?? "管理员"}
+      stats={stats}
+      recent={recent}
+    />
   );
 }

@@ -120,3 +120,96 @@ model VerificationToken {
     @@unique([identifier, token])
     @@map("verification_token")
 }
+
+// ─── 地址库 / 知识库 ───────────────────────────────
+// ponytail: id 用 cuid(varchar(191)) 与 user/role 保持一致；时间字段 snake_case 用 @map；
+// 不在 Prisma 层声明 onDelete/onUpdate 外键级联，由业务层保证引用完整性。
+model Region {
+    id         String   @id @default(cuid())
+    code       String   @unique
+    name       String
+    level      Int
+    type       String?
+    parentCode String?  @map("parent_code")
+    fullName   String?  @map("full_name")
+    sortOrder  Int      @default(0) @map("sort_order")
+    status     Int      @default(1)
+    createdAt  DateTime @map("created_at")
+    updatedAt  DateTime @updatedAt @map("updated_at")
+
+    communities Community[]
+    pois        Poi[]
+    villages    Village[]
+
+    @@index([parentCode])
+    @@index([level])
+    @@index([status])
+    @@index([name])
+    @@map("regions")
+}
+
+model Community {
+    id        String   @id @default(cuid())
+    name      String
+    alias     String?
+    regionId  String?  @map("region_id")
+    address   Json?
+    geom      Json?
+    status    Int      @default(1)
+    createdAt DateTime @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    region Region? @relation(fields: [regionId], references: [id])
+
+    @@index([regionId])
+    @@index([status])
+    @@map("communities")
+}
+
+model Village {
+    id        String   @id @default(cuid())
+    name      String
+    alias     String?
+    regionId  String?  @map("region_id")
+    geom      Json?
+    status    Int      @default(1)
+    createdAt DateTime @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    region Region? @relation(fields: [regionId], references: [id])
+
+    @@index([regionId])
+    @@index([status])
+    @@map("village")
+}
+
+model Road {
+    id        String    @id @default(cuid())
+    road      String
+    status    Int       @default(1)
+    createdAt DateTime? @map("created_at")
+    updatedAt DateTime? @updatedAt @map("updated_at")
+
+    @@index([status])
+    @@map("roads")
+}
+
+model Poi {
+    id        String   @id @default(cuid())
+    name      String
+    type      String?
+    alias     String?
+    regionId  String?  @map("region_id")
+    address   Json?
+    geom      Json?
+    status    Int      @default(1)
+    createdAt DateTime @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    region Region? @relation(fields: [regionId], references: [id])
+
+    @@index([regionId])
+    @@index([type])
+    @@index([status])
+    @@map("pois")
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Table,
   TableBody,
@@ -113,11 +115,17 @@ export function MenusClient() {
   const parentOptions = flattenWithDepth(menus ?? [], form.id);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">菜单管理</h1>
-        <Button onClick={() => openCreate()}>新建菜单</Button>
-      </div>
+    <div className="space-y-5">
+      <PageHeader
+        title="菜单管理"
+        description="维护侧边栏菜单结构与排序"
+        actions={
+          <Button onClick={() => openCreate()}>
+            <Plus className="size-4" />
+            新建菜单
+          </Button>
+        }
+      />
 
       <Table>
         <TableHeader>
@@ -134,7 +142,7 @@ export function MenusClient() {
           {isLoading ? (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
-                加载中...
+                加载中…
               </TableCell>
             </TableRow>
           ) : tree.length === 0 ? (
@@ -162,8 +170,8 @@ export function MenusClient() {
           <DialogHeader>
             <DialogTitle>{form.id ? "编辑菜单" : "新建菜单"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
               <Label htmlFor="name">名称</Label>
               <Input
                 id="name"
@@ -171,40 +179,38 @@ export function MenusClient() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="path">路径(如 /users, 父菜单可留空)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="path">路径（如 /users，父菜单可留空）</Label>
               <Input
                 id="path"
                 value={form.path}
                 onChange={(e) => setForm({ ...form, path: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="icon">图标名(如 users)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="icon">图标名（如 users）</Label>
               <Input
                 id="icon"
                 value={form.icon}
                 onChange={(e) => setForm({ ...form, icon: e.target.value })}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="sort">排序(小在前)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="sort">排序（数值小在前）</Label>
               <Input
                 id="sort"
                 type="number"
                 value={form.sort}
-                onChange={(e) =>
-                  setForm({ ...form, sort: Number(e.target.value) })
-                }
+                onChange={(e) => setForm({ ...form, sort: Number(e.target.value) })}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label htmlFor="parent">父菜单</Label>
               <select
                 id="parent"
                 value={form.parentId}
                 onChange={(e) => setForm({ ...form, parentId: e.target.value })}
-                className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+                className="h-9 w-full rounded-xl border border-input bg-background px-3.5 text-sm"
               >
                 <option value="">(顶级)</option>
                 {parentOptions.map((o) => (
@@ -225,7 +231,7 @@ export function MenusClient() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
               取消
             </Button>
             <Button onClick={submit}>保存</Button>
@@ -251,7 +257,6 @@ function buildMenuTree(menus: Menu[]): TreeNode[] {
   return walk(null);
 }
 
-/** 平铺菜单带缩进深度, 用于父菜单下拉; 排除某个 id 及其子树(避免循环) */
 function flattenWithDepth(menus: Menu[], excludeId: string | null) {
   const byParent = new Map<string | null, Menu[]>();
   for (const m of menus) {
@@ -278,7 +283,7 @@ function flattenWithDepth(menus: Menu[], excludeId: string | null) {
 function collectSubtree(
   id: string,
   byParent: Map<string | null, Menu[]>,
-  out: Set<string>,
+  out: Set<string>
 ) {
   out.add(id);
   for (const m of byParent.get(id) ?? []) {
@@ -303,23 +308,20 @@ function MenuRow({
         <TableCell>
           <span style={{ paddingLeft: `${depth * 20}px` }}>{node.name}</span>
         </TableCell>
-        <TableCell className="font-mono text-xs">{node.path ?? "-"}</TableCell>
-        <TableCell>{node.icon ?? "-"}</TableCell>
+        <TableCell className="font-mono text-xs">{node.path ?? "—"}</TableCell>
+        <TableCell>{node.icon ?? "—"}</TableCell>
         <TableCell>{node.sort}</TableCell>
         <TableCell>{node.visible ? "是" : "否"}</TableCell>
-        <TableCell className="space-x-2 text-right">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onEdit({ ...node, children: undefined } as unknown as Menu)}
-          >
+        <TableCell className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onEdit({ ...node, children: undefined } as unknown as Menu)}>
             编辑
           </Button>
           <Button
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="text-[#ff3b30]"
             onClick={() => {
-              if (confirm(`确定删除菜单 ${node.name} 及其子菜单?`)) {
+              if (confirm(`确定删除菜单 ${node.name} 及其子菜单？`)) {
                 onDelete(node.id);
               }
             }}
