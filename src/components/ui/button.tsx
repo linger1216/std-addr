@@ -8,23 +8,23 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        /* Apple 胶囊：近黑底白字，圆角极大 */
+        /* 主操作：主题靛蓝实底 */
         default:
-          "bg-primary text-primary-foreground hover:bg-[#2d2d2f] active:bg-[#3d3d3f]",
-        /* 幽灵：极轻灰底黑字，Apple ghost style */
+          "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/85",
+        /* 幽灵：极轻底 */
         ghost:
           "hover:bg-muted aria-expanded:bg-muted text-foreground",
-        /* 次级：浅灰底 */
+        /* 次级：中性浅灰蓝面板 */
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[#e8e8ed] aria-expanded:bg-secondary",
-        /* 描边：白色底 hairline 边框 */
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary",
+        /* 描边：白底细边框 */
         outline:
           "border-border bg-background hover:bg-muted text-foreground aria-expanded:bg-muted",
-        /* 危险：Apple 红底 */
+        /* 危险：红字淡底 */
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30",
         /* 文字链接 */
-        link: "text-[#0066cc] underline-offset-4 hover:underline",
+        link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         /* sm: 32px 高，圆角 10px */

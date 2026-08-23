@@ -9,18 +9,18 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        /* 默认：近黑胶囊白字 */
-        default: "bg-[#1d1d1f] text-white",
-        /* 次级：浅灰底 */
+        /* 默认：天空蓝胶囊 */
+        default: "bg-primary text-primary-foreground",
+        /* 次级：淡蓝底 */
         secondary: "bg-secondary text-secondary-foreground",
-        /* 危险：Apple 红 */
+        /* 危险：红字淡底 */
         destructive: "bg-destructive/10 text-destructive",
-        /* 描边：hairline 边框 */
+        /* 描边：细边框 */
         outline: "border-border text-foreground",
         /* 幽灵 */
         ghost: "hover:bg-muted text-muted-foreground",
         /* 链接 */
-        link: "text-[#0066cc] underline-offset-4 hover:underline",
+        link: "text-primary underline-offset-4 hover:underline",
       },
     },
     defaultVariants: {

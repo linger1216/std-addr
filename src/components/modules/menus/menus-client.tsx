@@ -16,6 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/page-header";
+import { Reveal } from "@/components/ui/reveal";
+import { TableSkeleton } from "@/components/ui/skeleton-blocks";
 import {
   Table,
   TableBody,
@@ -127,7 +129,8 @@ export function MenusClient() {
         }
       />
 
-      <Table>
+      <Reveal delay={40}>
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>名称</TableHead>
@@ -140,11 +143,7 @@ export function MenusClient() {
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={6} className="text-center text-muted-foreground">
-                加载中…
-              </TableCell>
-            </TableRow>
+            <TableSkeleton rows={6} cols={6} />
           ) : tree.length === 0 ? (
             <TableRow>
               <TableCell colSpan={6} className="text-center text-muted-foreground">
@@ -164,6 +163,7 @@ export function MenusClient() {
           )}
         </TableBody>
       </Table>
+      </Reveal>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
@@ -319,7 +319,7 @@ function MenuRow({
           <Button
             variant="ghost"
             size="sm"
-            className="text-[#ff3b30]"
+            className="text-danger"
             onClick={() => {
               if (confirm(`确定删除菜单 ${node.name} 及其子菜单？`)) {
                 onDelete(node.id);

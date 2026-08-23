@@ -16,6 +16,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/page-header";
+import { Reveal } from "@/components/ui/reveal";
+import { TableSkeleton } from "@/components/ui/skeleton-blocks";
 import {
   Table,
   TableBody,
@@ -138,7 +140,8 @@ export function RolesClient() {
         }
       />
 
-      <Table>
+      <Reveal delay={40}>
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>名称</TableHead>
@@ -150,11 +153,7 @@ export function RolesClient() {
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
-                加载中…
-              </TableCell>
-            </TableRow>
+            <TableSkeleton rows={5} cols={5} />
           ) : roles?.length === 0 ? (
             <TableRow>
               <TableCell colSpan={5} className="text-center text-muted-foreground">
@@ -185,7 +184,7 @@ export function RolesClient() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-[#ff3b30]"
+                    className="text-danger"
                     onClick={() => {
                       if (confirm(`确定删除角色 ${r.name}？`)) {
                         deleteRole.mutate({ id: r.id });
@@ -200,6 +199,7 @@ export function RolesClient() {
           )}
         </TableBody>
       </Table>
+      </Reveal>
 
       {/* 角色表单 */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

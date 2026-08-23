@@ -94,3 +94,7 @@ $RECYCLE.BIN/
 # package manager
 yarn.lock
 package-lock.json
+
+
+.agent-teams
+design/

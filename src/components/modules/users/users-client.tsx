@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/page-header";
+import { Reveal } from "@/components/ui/reveal";
+import { TableSkeleton } from "@/components/ui/skeleton-blocks";
 import {
   Table,
   TableBody,
@@ -133,7 +135,8 @@ export function UsersClient() {
         }
       />
 
-      <div className="flex items-center justify-between gap-3">
+      <Reveal>
+        <div className="flex items-center justify-between gap-3">
         <div className="relative w-[280px]">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -147,7 +150,9 @@ export function UsersClient() {
           共 {filtered.length} 人
         </div>
       </div>
+      </Reveal>
 
+      <Reveal delay={60}>
       <Table>
         <TableHeader>
           <TableRow>
@@ -159,11 +164,7 @@ export function UsersClient() {
         </TableHeader>
         <TableBody>
           {isLoading ? (
-            <TableRow>
-              <TableCell colSpan={4} className="text-center text-muted-foreground">
-                加载中…
-              </TableCell>
-            </TableRow>
+            <TableSkeleton rows={5} cols={4} />
           ) : filtered.length === 0 ? (
             <TableRow>
               <TableCell colSpan={4} className="text-center text-muted-foreground">
@@ -197,6 +198,7 @@ export function UsersClient() {
           )}
         </TableBody>
       </Table>
+      </Reveal>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

@@ -117,12 +117,12 @@ export function Sidebar({
       >
         {/* Logo */}
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border px-4">
-          <div className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-foreground text-[13px] font-semibold text-background">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-xl bg-primary text-[13px] font-semibold text-primary-foreground">
             SA
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <div className="truncate text-[13.5px] font-semibold tracking-[-0.01em]">std-addr</div>
+              <div className="truncate font-heading text-[15px] font-semibold tracking-[-0.01em]">std-addr</div>
               <div className="truncate text-[11px] text-muted-foreground">管理控制台</div>
             </div>
           )}
@@ -187,10 +187,10 @@ export function Sidebar({
                 href={child.path ?? "#"}
                 onClick={() => setPopupParentId(null)}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px]",
+                  "flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[13px] transition-colors duration-150",
                   childActive
-                    ? "bg-secondary font-medium text-foreground"
-                    : "text-foreground hover:bg-secondary"
+                    ? "bg-muted/60 font-medium text-primary"
+                    : "text-foreground hover:bg-muted/50"
                 )}
               >
                 {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
@@ -238,10 +238,10 @@ function MenuLink({
           onClick={onParentClick}
           title={node.name}
           className={cn(
-            "flex w-full items-center justify-center rounded-xl py-2",
+            "flex w-full items-center justify-center rounded-xl py-2 transition-colors duration-150",
             active
-              ? "bg-secondary text-foreground"
-              : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+              ? "bg-muted/60 text-primary"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
           )}
         >
           {Icon ? <Icon className="size-4" /> : <span className="text-xs">{node.icon}</span>}
@@ -253,10 +253,10 @@ function MenuLink({
         href={node.path ?? "#"}
         title={node.name}
         className={cn(
-          "flex items-center justify-center rounded-xl py-2",
+          "flex items-center justify-center rounded-xl py-2 transition-colors duration-150",
           active
-            ? "bg-secondary text-foreground"
-            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+            ? "bg-muted/60 text-primary"
+            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         )}
       >
         {Icon ? <Icon className="size-4" /> : <span className="text-xs">{node.icon}</span>}
@@ -273,10 +273,10 @@ function MenuLink({
           type="button"
           onClick={() => toggle(node.id)}
           className={cn(
-            "group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px]",
+            "group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] transition-colors duration-150",
             active
-              ? "bg-secondary font-medium text-foreground"
-              : "text-foreground hover:bg-secondary"
+              ? "bg-muted/60 font-medium text-primary"
+              : "text-foreground hover:bg-muted/50"
           )}
         >
           {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
@@ -310,15 +310,15 @@ function MenuLink({
     <Link
       href={node.path ?? "#"}
       className={cn(
-        "group relative flex items-center gap-2 rounded-xl px-3 py-2 text-[13px]",
+        "group relative flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] transition-colors duration-150",
         active
-          ? "bg-secondary font-medium text-foreground"
-          : "text-foreground hover:bg-secondary"
+          ? "bg-muted/60 font-medium text-primary"
+          : "text-foreground hover:bg-muted/50"
       )}
       style={{ paddingLeft: `${12 + depth * 20}px` }}
     >
       {active && (
-        <span className="absolute top-1/2 left-0 h-5 w-[2px] -translate-y-1/2 rounded-r-sm bg-foreground" />
+        <span className="absolute top-1/2 left-0 h-5 w-[3px] -translate-y-1/2 rounded-r-sm bg-primary" />
       )}
       {Icon && <Icon className="size-4 shrink-0 text-muted-foreground" />}
       <span>{node.name}</span>

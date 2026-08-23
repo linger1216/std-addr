@@ -12,6 +12,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Reveal } from "@/components/ui/reveal";
 import { cn } from "@/lib/utils";
 
 type StatCard = { key: string; label: string; value: number; trend: number };
@@ -47,7 +48,7 @@ export function DashboardClient({
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.02em]">
+          <h1 className="font-heading text-[28px] font-semibold leading-tight tracking-[-0.02em]">
             仪表盘
           </h1>
           <p className="mt-1.5 text-[13px] text-muted-foreground">
@@ -81,6 +82,7 @@ export function DashboardClient({
       </div>
 
       {/* Stat cards */}
+      <Reveal>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.cards.map((c) => {
           const Icon = ICONS[c.key] ?? Users;
@@ -89,7 +91,7 @@ export function DashboardClient({
             <Card key={c.key} className="p-5">
               <CardHeader className="gap-3 p-0">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <CardTitle className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {c.label}
                   </CardTitle>
                   <div className="flex size-9 items-center justify-center rounded-xl bg-secondary text-foreground">
@@ -105,8 +107,8 @@ export function DashboardClient({
                   className={cn(
                     "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium",
                     up
-                      ? "bg-[#dcfce7] text-[#166534]"
-                      : "bg-[#fee2e2] text-[#991b1b]"
+                      ? "bg-success-soft text-success-fg"
+                      : "bg-danger-soft text-danger-fg"
                   )}
                 >
                   {up ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
@@ -118,8 +120,10 @@ export function DashboardClient({
           );
         })}
       </div>
+      </Reveal>
 
       {/* Bottom row */}
+      <Reveal delay={100}>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
         {/* 角色分布 */}
         <Card className="p-5">
@@ -153,7 +157,7 @@ export function DashboardClient({
             <ul className="divide-y divide-border/60">
               {recent.map((r) => (
                 <li key={r.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
-                  <span className="mt-1.5 size-2 shrink-0 rounded-full bg-[#0066cc]" />
+                  <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px]">
                       {r.name ?? r.username}
@@ -173,6 +177,7 @@ export function DashboardClient({
           </CardContent>
         </Card>
       </div>
+      </Reveal>
     </div>
   );
 }
@@ -199,14 +204,14 @@ function Sparkline({ points, max }: { points: SeriesPoint[]; max: number }) {
       <path
         d={path.line}
         fill="none"
-        stroke="#0066cc"
+        stroke="var(--primary)"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       {path.coords.map(([x, y], i) =>
-        points[i] && points[i]!.count > 0 ? (
-          <circle key={i} cx={x} cy={y} r="2.5" fill="#0066cc" />
+        points[i] && points[i].count > 0 ? (
+          <circle key={i} cx={x} cy={y} r="2.5" fill="var(--primary)" />
         ) : null
       )}
     </svg>

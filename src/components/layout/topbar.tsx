@@ -95,7 +95,7 @@ export function Topbar({ username, onToggle }: { username: string; onToggle: () 
         {/* 通知 */}
         <Button variant="ghost" size="icon" aria-label="通知" className="relative size-8">
           <Bell className="size-4" />
-          <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-[#ff3b30]" />
+          <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-danger" />
         </Button>
 
         {/* 主题 */}

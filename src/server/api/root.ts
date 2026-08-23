@@ -1,4 +1,8 @@
+import { communityRouter } from "@/server/api/routers/community";
 import { dashboardRouter } from "@/server/api/routers/dashboard";
+import { poiRouter } from "@/server/api/routers/poi";
+import { roadRouter } from "@/server/api/routers/road";
+import { villageRouter } from "@/server/api/routers/village";
 import { menuRouter } from "@/server/api/routers/menu";
 import { postRouter } from "@/server/api/routers/post";
 import { roleRouter } from "@/server/api/routers/role";
@@ -16,6 +20,10 @@ export const appRouter = createTRPCRouter({
   role: roleRouter,
   menu: menuRouter,
   dashboard: dashboardRouter,
+  community: communityRouter,
+  village: villageRouter,
+  road: roadRouter,
+  poi: poiRouter,
 });
 
 // export type definition of API

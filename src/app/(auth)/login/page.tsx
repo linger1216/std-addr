@@ -30,11 +30,11 @@ export default async function LoginPage() {
           <div className="flex size-8 items-center justify-center rounded-xl bg-foreground text-[14px] font-semibold text-background">
             SA
           </div>
-          <span className="text-[15px] font-semibold tracking-[-0.01em]">std-addr</span>
+          <span className="font-heading text-[15px] font-semibold tracking-[-0.01em]">std-addr</span>
         </div>
 
         <div>
-          <h2 className="text-[48px] font-semibold leading-[1.15] tracking-[-0.025em] text-foreground">
+          <h2 className="font-heading text-[48px] font-semibold leading-[1.15] tracking-[-0.025em] text-foreground">
             高效、可控、清晰
             <br />
             让每一次管理都更从容。
@@ -55,11 +55,11 @@ export default async function LoginPage() {
             <div className="flex size-7 items-center justify-center rounded-lg bg-foreground text-[12px] font-semibold text-background">
               SA
             </div>
-            <span className="text-[14px] font-semibold">std-addr</span>
+            <span className="font-heading text-[14px] font-semibold">std-addr</span>
           </div>
 
           <div className="space-y-1">
-            <h1 className="text-[28px] font-semibold tracking-[-0.02em] leading-tight">
+            <h1 className="font-heading text-[28px] font-semibold tracking-[-0.02em] leading-tight">
               欢迎回来
             </h1>
             <p className="text-[13px] text-muted-foreground">
@@ -97,7 +97,7 @@ export default async function LoginPage() {
                 type="checkbox"
                 name="remember"
                 defaultChecked
-                className="size-4 rounded border-border bg-secondary accent-foreground"
+                className="size-4 rounded border-border bg-secondary accent-primary"
               />
               7 天内自动登录
             </label>
