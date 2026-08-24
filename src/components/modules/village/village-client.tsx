@@ -22,11 +22,10 @@ import {
   type VillageRow,
 } from "@/components/modules/village/village-table";
 import {
-  EMPTY_FILTERS,
   type RegionOption,
-  type VillageFilters,
   VillageToolbar,
 } from "@/components/modules/village/village-toolbar";
+import { useVillageFilters } from "@/components/modules/village/use-village-filters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -66,8 +65,9 @@ export function VillageClient() {
   // 分页 + 筛选
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [filters, setFilters] = useState<VillageFilters>(EMPTY_FILTERS);
-  const [committed, setCommitted] = useState<VillageFilters>(EMPTY_FILTERS);
+
+  // ponytail: 筛选 state 由 useVillageFilters(zustand) 管理
+  const committed = useVillageFilters((s) => s.committed);
 
   // 选中
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -331,17 +331,6 @@ export function VillageClient() {
     });
   }
 
-  function handleReset() {
-    setFilters(EMPTY_FILTERS);
-    setCommitted(EMPTY_FILTERS);
-    setPage(1);
-  }
-
-  function handleSubmitSearch() {
-    setCommitted(filters);
-    setPage(1);
-  }
-
   const editingFormInitial = useMemo<VillageDetail | null>(() => {
     if (!editingId) return null;
     if (!editingData) return null;
@@ -402,10 +391,6 @@ export function VillageClient() {
 
       <Reveal delay={60}>
         <VillageToolbar
-          filters={filters}
-          onChange={setFilters}
-          onReset={handleReset}
-          onSubmit={handleSubmitSearch}
           regions={regionOptions}
           selectedCount={selected.size}
           onCreate={openCreate}

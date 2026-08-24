@@ -19,11 +19,10 @@ import { PoiDetailDialog } from "@/components/modules/poi/poi-detail";
 import { PoiStats } from "@/components/modules/poi/poi-stats";
 import { PoiTable, type PoiRow } from "@/components/modules/poi/poi-table";
 import {
-  EMPTY_FILTERS,
-  type PoiFilters,
   type RegionOption,
   PoiToolbar,
 } from "@/components/modules/poi/poi-toolbar";
+import { usePoiFilters } from "@/components/modules/poi/use-poi-filters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -64,8 +63,9 @@ export function PoiClient() {
   // 分页 + 筛选
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [filters, setFilters] = useState<PoiFilters>(EMPTY_FILTERS);
-  const [committed, setCommitted] = useState<PoiFilters>(EMPTY_FILTERS);
+
+  // ponytail: 筛选 state 由 usePoiFilters(zustand) 管理
+  const committed = usePoiFilters((s) => s.committed);
 
   // 选中
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -339,17 +339,6 @@ export function PoiClient() {
     });
   }
 
-  function handleReset() {
-    setFilters(EMPTY_FILTERS);
-    setCommitted(EMPTY_FILTERS);
-    setPage(1);
-  }
-
-  function handleSubmitSearch() {
-    setCommitted(filters);
-    setPage(1);
-  }
-
   const editingFormInitial = useMemo<PoiDetail | null>(() => {
     if (!editingId) return null;
     if (!editingData) return null;
@@ -414,10 +403,6 @@ export function PoiClient() {
 
       <Reveal delay={60}>
         <PoiToolbar
-          filters={filters}
-          onChange={setFilters}
-          onReset={handleReset}
-          onSubmit={handleSubmitSearch}
           regions={regionOptions}
           selectedCount={selected.size}
           onCreate={openCreate}

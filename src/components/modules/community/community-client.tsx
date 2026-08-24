@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { type RowSelectionState } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -12,16 +13,17 @@ import {
 } from "@/components/modules/community/community-form";
 import { CommunityStats } from "@/components/modules/community/community-stats";
 import {
+  createCommunityColumns,
   CommunityTable,
   type CommunityRow,
 } from "@/components/modules/community/community-table";
 import {
   CommunityToolbar,
-  EMPTY_FILTERS,
-  type CommunityFilters,
   type RegionOption,
 } from "@/components/modules/community/community-toolbar";
+import { useCommunityFilters } from "@/components/modules/community/use-community-filters";
 import { CsvImportDialog, type ImportResult } from "@/components/modules/community/csv-import";
+import { useAppTable } from "@/lib/table";
 import { PaginationControl } from "@/components/modules/community/pagination-control";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,11 +64,13 @@ export function CommunityClient() {
   // 分页 + 筛选
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [filters, setFilters] = useState<CommunityFilters>(EMPTY_FILTERS);
-  const [committed, setCommitted] = useState<CommunityFilters>(EMPTY_FILTERS);
 
-  // 选中
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // ponytail: 筛选 state 交给 useCommunityFilters(zustand),
+  // toolbar 直接读写 store,client 这里只读 committed 用于触发 query。
+  const committed = useCommunityFilters((s) => s.committed);
+
+  // 选中:交给 TanStack table 的 rowSelection 管
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   // 表单 dialog
   const [formOpen, setFormOpen] = useState(false);
@@ -148,7 +152,7 @@ export function CommunityClient() {
       ]);
       toast.success("已删除");
       setDeleteRow(null);
-      setSelected(new Set());
+      setRowSelection({});
     },
     onError: (e) => toast.error(e.message),
   });
@@ -160,7 +164,7 @@ export function CommunityClient() {
       ]);
       toast.success(`已删除 ${res.count} 条`);
       setBatchDeleteOpen(false);
-      setSelected(new Set());
+      setRowSelection({});
     },
     onError: (e) => toast.error(e.message),
   });
@@ -186,19 +190,6 @@ export function CommunityClient() {
     setFormOpen(true);
   }, [editingId, editingData]);
 
-  // 数据切换时丢掉过期的选中
-  useEffect(() => {
-    if (!listData?.items) return;
-    const valid = new Set(listData.items.map((i) => i.id));
-    setSelected((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id);
-      });
-      return next;
-    });
-  }, [listData?.items]);
-
   const rows: CommunityRow[] = useMemo(
     () =>
       (listData?.items ?? []).map((item: ListItem) => ({
@@ -217,24 +208,29 @@ export function CommunityClient() {
   );
 
   const total = listData?.total ?? 0;
-  const allSelected =
-    rows.length > 0 && rows.every((r) => selected.has(r.id));
 
-  function handleToggleAll(next: boolean) {
-    if (next) {
-      setSelected(new Set(rows.map((r) => r.id)));
-    } else {
-      setSelected(new Set());
-    }
-  }
-  function handleToggleOne(id: string, next: boolean) {
-    setSelected((prev) => {
-      const ns = new Set(prev);
-      if (next) ns.add(id);
-      else ns.delete(id);
-      return ns;
-    });
-  }
+  const columns = useMemo(
+    () =>
+      createCommunityColumns({
+        onView: openView,
+        onEdit: openEdit,
+        onDelete: handleDelete,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const table = useAppTable({
+    data: rows,
+    columns,
+    state: { rowSelection },
+    onRowSelectionChange: setRowSelection,
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
+  });
+
+  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id);
+  const selectCount = selectedIds.length;
 
   function openCreate() {
     setEditingId(null);
@@ -296,8 +292,8 @@ export function CommunityClient() {
     setBatchDeleteOpen(true);
   }
   function confirmBatchDelete() {
-    if (selected.size === 0) return;
-    deleteManyMut.mutate({ ids: Array.from(selected) });
+    if (selectCount === 0) return;
+    deleteManyMut.mutate({ ids: selectedIds });
   }
 
   async function handleImport(
@@ -337,17 +333,6 @@ export function CommunityClient() {
         },
       );
     });
-  }
-
-  function handleReset() {
-    setFilters(EMPTY_FILTERS);
-    setCommitted(EMPTY_FILTERS);
-    setPage(1);
-  }
-
-  function handleSubmitSearch() {
-    setCommitted(filters);
-    setPage(1);
   }
 
   const editingFormInitial = useMemo<CommunityDetail | null>(() => {
@@ -412,12 +397,8 @@ export function CommunityClient() {
 
       <Reveal delay={60}>
         <CommunityToolbar
-          filters={filters}
-          onChange={setFilters}
-          onReset={handleReset}
-          onSubmit={handleSubmitSearch}
           regions={regionOptions}
-          selectedCount={selected.size}
+          selectedCount={selectCount}
           onCreate={openCreate}
           onImport={() => setImportOpen(true)}
           onBatchDelete={handleBatchDelete}
@@ -425,17 +406,7 @@ export function CommunityClient() {
       </Reveal>
 
       <Reveal delay={120}>
-        <CommunityTable
-          rows={rows}
-          isLoading={listLoading}
-          selectedIds={selected}
-          onToggleAll={handleToggleAll}
-          onToggleOne={handleToggleOne}
-          allSelected={allSelected}
-          onView={openView}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-        />
+        <CommunityTable table={table} isLoading={listLoading} />
       </Reveal>
 
       <Reveal delay={180}>
@@ -527,7 +498,7 @@ export function CommunityClient() {
           <DialogHeader>
             <DialogTitle>批量删除</DialogTitle>
             <DialogDescription>
-              {`确定删除选中的 ${selected.size} 个小区?此操作不可恢复。`}
+              {`确定删除选中的 ${selectCount} 个小区?此操作不可恢复。`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -536,7 +507,7 @@ export function CommunityClient() {
             </Button>
             <Button
               onClick={confirmBatchDelete}
-              disabled={deleteManyMut.isPending || selected.size === 0}
+              disabled={deleteManyMut.isPending || selectCount === 0}
               className="bg-danger text-white hover:bg-danger/90"
             >
               {deleteManyMut.isPending ? "删除中…" : "删除"}

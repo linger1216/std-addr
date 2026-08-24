@@ -175,11 +175,15 @@ export function CommunityFormDialog({
             <div className="space-y-1.5">
               <Label htmlFor="c-region">所属区划</Label>
               <Select
-                value={form.regionId || "_none"}
+                value={form.regionId}
+                items={[
+                  { value: "", label: "未指定" },
+                  ...regions.map((r) => ({ value: r.id, label: r.name })),
+                ]}
                 onValueChange={(v) =>
                   setForm({
                     ...form,
-                    regionId: v && v !== "_none" ? String(v) : "",
+                    regionId: v ? String(v) : "",
                   })
                 }
               >
@@ -187,7 +191,7 @@ export function CommunityFormDialog({
                   <SelectValue placeholder="选择区划" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="_none">未指定</SelectItem>
+                  <SelectItem value="">未指定</SelectItem>
                   {regions.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
                       {r.name}
@@ -200,6 +204,10 @@ export function CommunityFormDialog({
               <Label htmlFor="c-status">状态</Label>
               <Select
                 value={String(form.status)}
+                items={[
+                  { value: "1", label: "启用" },
+                  { value: "0", label: "禁用" },
+                ]}
                 onValueChange={(v) =>
                   setForm({ ...form, status: (Number(v) as 0 | 1) })
                 }

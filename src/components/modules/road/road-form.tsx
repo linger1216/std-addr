@@ -119,6 +119,10 @@ export function RoadFormDialog({
             <Label htmlFor="r-status">状态</Label>
             <Select
               value={String(form.status)}
+              items={[
+                { value: "1", label: "启用" },
+                { value: "0", label: "禁用" },
+              ]}
               onValueChange={(v) =>
                 setForm({ ...form, status: Number(v) as 0 | 1 })
               }

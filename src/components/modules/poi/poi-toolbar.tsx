@@ -19,53 +19,39 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { usePoiFilters } from "./use-poi-filters";
+
 export type RegionOption = { id: string; name: string };
 
-export type PoiFilters = {
-  q: string;
-  type: string;
-  regionId: string;
-  status: "" | "0" | "1";
-};
-
-export const EMPTY_FILTERS: PoiFilters = {
-  q: "",
-  type: "",
-  regionId: "",
-  status: "",
-};
-
 export function PoiToolbar({
-  filters,
-  onChange,
-  onReset,
-  onSubmit,
   regions,
   selectedCount,
   onCreate,
   onImport,
   onBatchDelete,
 }: {
-  filters: PoiFilters;
-  onChange: (next: PoiFilters) => void;
-  onReset: () => void;
-  onSubmit: () => void;
   regions: RegionOption[];
   selectedCount: number;
   onCreate: () => void;
   onImport: () => void;
   onBatchDelete: () => void;
 }) {
+  // ponytail: 筛选 state 由 usePoiFilters(zustand) 管理
+  const draft = usePoiFilters((s) => s.draft);
+  const patchDraft = usePoiFilters((s) => s.patchDraft);
+  const commit = usePoiFilters((s) => s.commit);
+  const reset = usePoiFilters((s) => s.reset);
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-1 flex-wrap items-center gap-2">
         <div className="relative w-[240px]">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={filters.q}
-            onChange={(e) => onChange({ ...filters, q: e.target.value })}
+            value={draft.q}
+            onChange={(e) => patchDraft({ q: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === "Enter") onSubmit();
+              if (e.key === "Enter") commit();
             }}
             placeholder="搜索名称 / 别名"
             className="h-8 border-transparent bg-secondary pl-8 pr-3 text-[13px]"
@@ -73,29 +59,28 @@ export function PoiToolbar({
         </div>
 
         <Input
-          value={filters.type}
-          onChange={(e) => onChange({ ...filters, type: e.target.value })}
+          value={draft.type}
+          onChange={(e) => patchDraft({ type: e.target.value })}
           onKeyDown={(e) => {
-            if (e.key === "Enter") onSubmit();
+            if (e.key === "Enter") commit();
           }}
           placeholder="类型,如:医院"
           className="h-8 w-[150px] border-transparent bg-secondary text-[13px]"
         />
 
         <Select
-          value={filters.regionId || "_all"}
-          onValueChange={(v) =>
-            onChange({
-              ...filters,
-              regionId: v && v !== "_all" ? String(v) : "",
-            })
-          }
+          value={draft.regionId}
+          items={[
+            { value: "", label: "全部区划" },
+            ...regions.map((r) => ({ value: r.id, label: r.name })),
+          ]}
+          onValueChange={(v) => patchDraft({ regionId: v ? String(v) : "" })}
         >
           <SelectTrigger className="h-8 min-w-[150px] rounded-xl bg-secondary text-[13px]">
             <SelectValue placeholder="所属区划" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all">全部区划</SelectItem>
+            <SelectItem value="">全部区划</SelectItem>
             {regions.map((r) => (
               <SelectItem key={r.id} value={r.id}>
                 {r.name}
@@ -105,30 +90,30 @@ export function PoiToolbar({
         </Select>
 
         <Select
-          value={filters.status || "_all"}
-          onValueChange={(v) =>
-            onChange({
-              ...filters,
-              status: v && v !== "_all" ? (v as "0" | "1") : "",
-            })
-          }
+          value={draft.status}
+          items={[
+            { value: "", label: "全部状态" },
+            { value: "1", label: "启用" },
+            { value: "0", label: "禁用" },
+          ]}
+          onValueChange={(v) => patchDraft({ status: v ?? "" })}
         >
           <SelectTrigger className="h-8 min-w-[120px] rounded-xl bg-secondary text-[13px]">
             <SelectValue placeholder="状态" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all">全部状态</SelectItem>
+            <SelectItem value="">全部状态</SelectItem>
             <SelectItem value="1">启用</SelectItem>
             <SelectItem value="0">禁用</SelectItem>
           </SelectContent>
         </Select>
 
-        <Button variant="ghost" size="sm" onClick={onReset}>
+        <Button variant="ghost" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
           重置
         </Button>
 
-        <Button size="sm" onClick={onSubmit}>
+        <Button size="sm" onClick={commit}>
           <SearchIcon className="size-3.5" />
           搜索
         </Button>

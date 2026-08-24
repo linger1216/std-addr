@@ -1,7 +1,5 @@
 "use client";
 
-import { Eye, Pencil, Trash2 } from "lucide-react";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -132,28 +130,27 @@ export function PoiTable({
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="sm"
                       onClick={() => onView(row)}
-                      aria-label="查看"
+                      className="h-7 px-2 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
                     >
-                      <Eye className="size-3.5" />
+                      查看
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="sm"
                       onClick={() => onEdit(row)}
-                      aria-label="编辑"
+                      className="h-7 px-2 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
                     >
-                      <Pencil className="size-3.5" />
+                      编辑
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="sm"
                       onClick={() => onDelete(row)}
-                      aria-label="删除"
-                      className="text-danger hover:bg-danger-soft hover:text-danger"
+                      className="h-7 px-2 text-[12.5px] font-normal text-danger hover:bg-danger-soft hover:text-danger"
                     >
-                      <Trash2 className="size-3.5" />
+                      删除
                     </Button>
                   </div>
                 </TableCell>

@@ -4,11 +4,18 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className,
+  containerClassName,
+  ...props
+}: React.ComponentProps<"table"> & { containerClassName?: string }) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-hidden rounded-2xl border border-border bg-card shadow-(--shadow-card)"
+      className={cn(
+        "relative w-full overflow-hidden rounded-2xl border border-border bg-card shadow-(--shadow-card)",
+        containerClassName,
+      )}
     >
       <table
         data-slot="table"
@@ -23,7 +30,10 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("bg-muted/40 [&_tr]:border-b [&_tr]:border-border", className)}
+      className={cn(
+        "sticky top-0 z-10 bg-muted/40 [&_tr]:border-b [&_tr]:border-border",
+        className,
+      )}
       {...props}
     />
   )

@@ -18,11 +18,8 @@ import {
 import { RoadDetailDialog } from "@/components/modules/road/road-detail";
 import { RoadStats } from "@/components/modules/road/road-stats";
 import { RoadTable, type RoadRow } from "@/components/modules/road/road-table";
-import {
-  EMPTY_FILTERS,
-  type RoadFilters,
-  RoadToolbar,
-} from "@/components/modules/road/road-toolbar";
+import { RoadToolbar } from "@/components/modules/road/road-toolbar";
+import { useRoadFilters } from "@/components/modules/road/use-road-filters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -52,8 +49,9 @@ export function RoadClient() {
   // 分页 + 筛选
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [filters, setFilters] = useState<RoadFilters>(EMPTY_FILTERS);
-  const [committed, setCommitted] = useState<RoadFilters>(EMPTY_FILTERS);
+
+  // ponytail: 筛选 state 由 useRoadFilters(zustand) 管理
+  const committed = useRoadFilters((s) => s.committed);
 
   // 选中
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -280,17 +278,6 @@ export function RoadClient() {
     });
   }
 
-  function handleReset() {
-    setFilters(EMPTY_FILTERS);
-    setCommitted(EMPTY_FILTERS);
-    setPage(1);
-  }
-
-  function handleSubmitSearch() {
-    setCommitted(filters);
-    setPage(1);
-  }
-
   const editingFormInitial = useMemo<RoadDetail | null>(() => {
     if (!editingId) return null;
     if (!editingData) return null;
@@ -333,10 +320,6 @@ export function RoadClient() {
 
       <Reveal delay={60}>
         <RoadToolbar
-          filters={filters}
-          onChange={setFilters}
-          onReset={handleReset}
-          onSubmit={handleSubmitSearch}
           selectedCount={selected.size}
           onCreate={openCreate}
           onImport={() => setImportOpen(true)}

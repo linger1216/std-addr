@@ -19,45 +19,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type RoadFilters = {
-  q: string;
-  status: "" | "0" | "1";
-};
-
-export const EMPTY_FILTERS: RoadFilters = {
-  q: "",
-  status: "",
-};
+import { useRoadFilters } from "./use-road-filters";
 
 export function RoadToolbar({
-  filters,
-  onChange,
-  onReset,
-  onSubmit,
   selectedCount,
   onCreate,
   onImport,
   onBatchDelete,
 }: {
-  filters: RoadFilters;
-  onChange: (next: RoadFilters) => void;
-  onReset: () => void;
-  onSubmit: () => void;
   selectedCount: number;
   onCreate: () => void;
   onImport: () => void;
   onBatchDelete: () => void;
 }) {
+  // ponytail: 筛选 state 由 useRoadFilters(zustand) 管理
+  const draft = useRoadFilters((s) => s.draft);
+  const patchDraft = useRoadFilters((s) => s.patchDraft);
+  const commit = useRoadFilters((s) => s.commit);
+  const reset = useRoadFilters((s) => s.reset);
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-1 flex-wrap items-center gap-2">
         <div className="relative w-[280px]">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={filters.q}
-            onChange={(e) => onChange({ ...filters, q: e.target.value })}
+            value={draft.q}
+            onChange={(e) => patchDraft({ q: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === "Enter") onSubmit();
+              if (e.key === "Enter") commit();
             }}
             placeholder="搜索道路名"
             className="h-8 border-transparent bg-secondary pl-8 pr-3 text-[13px]"
@@ -65,30 +55,30 @@ export function RoadToolbar({
         </div>
 
         <Select
-          value={filters.status || "_all"}
-          onValueChange={(v) =>
-            onChange({
-              ...filters,
-              status: v && v !== "_all" ? (v as "0" | "1") : "",
-            })
-          }
+          value={draft.status}
+          items={[
+            { value: "", label: "全部状态" },
+            { value: "1", label: "启用" },
+            { value: "0", label: "禁用" },
+          ]}
+          onValueChange={(v) => patchDraft({ status: v ?? "" })}
         >
           <SelectTrigger className="h-8 min-w-[120px] rounded-xl bg-secondary text-[13px]">
             <SelectValue placeholder="状态" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all">全部状态</SelectItem>
+            <SelectItem value="">全部状态</SelectItem>
             <SelectItem value="1">启用</SelectItem>
             <SelectItem value="0">禁用</SelectItem>
           </SelectContent>
         </Select>
 
-        <Button variant="ghost" size="sm" onClick={onReset}>
+        <Button variant="ghost" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
           重置
         </Button>
 
-        <Button size="sm" onClick={onSubmit}>
+        <Button size="sm" onClick={commit}>
           <SearchIcon className="size-3.5" />
           搜索
         </Button>
