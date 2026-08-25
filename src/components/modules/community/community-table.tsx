@@ -46,52 +46,57 @@ export function createCommunityColumns() {
     h.display({
       id: "select",
       header: ({ table }) => (
-        <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
-          indeterminate={
-            table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
-          }
-          onCheckedChange={(v) => table.toggleAllPageRowsSelected(Boolean(v))}
-          aria-label="全选"
-        />
+        // flex 居中容器,确保 Checkbox 在 text-center cell 里也能水平居中
+        <div className="flex justify-center">
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            indeterminate={
+              table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
+            }
+            onCheckedChange={(v) => table.toggleAllPageRowsSelected(Boolean(v))}
+            aria-label="全选"
+          />
+        </div>
       ),
       cell: ({ row }) => (
-        <Checkbox
-          checked={row.getIsSelected()}
-          onCheckedChange={(v) => row.toggleSelected(Boolean(v))}
-          aria-label={`选择 ${row.original.name}`}
-        />
+        <div className="flex justify-center">
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(v) => row.toggleSelected(Boolean(v))}
+            aria-label={`选择 ${row.original.name}`}
+          />
+        </div>
       ),
       meta: { className: "w-10" },
     }),
     columnHelper.accessor("name", {
-      header: "名称",
-      cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+      header: () => <div className="text-center">名称</div>,
+      cell: (info) => <span className="items-center font-medium">{info.getValue()}</span>,
     }),
     columnHelper.accessor("alias", {
-      header: "别名",
+      header: () => <div className="text-center">别名</div>,
       cell: (info) => (
         <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
       ),
     }),
     columnHelper.accessor("regionName", {
-      header: "所属区划",
+      header: () => <div className="text-center">所属区划</div>,
       cell: (info) => (
         <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
       ),
     }),
     columnHelper.accessor("address", {
-      header: "地址",
+      header: () => <div className="text-center">地址</div>,
       cell: (info) => <AddressCell value={info.getValue()} />,
       meta: { className: "min-w-[200px]" },
     }),
     columnHelper.accessor("status", {
-      header: "状态",
+      header: () => <div className="text-center">状态</div>,
       cell: (info) => <StatusBadge status={info.getValue()} />,
       meta: { className: "w-24" },
     }),
     columnHelper.accessor("createdAt", {
-      header: "创建时间",
+      header: () => <div className="text-center">创建时间</div>,
       cell: (info) => (
         <span className="text-muted-foreground">
           {formatShortDate(info.getValue())}
@@ -247,7 +252,9 @@ export const CommunityTable = memo(function CommunityTable({
               </TableCell>
             </TableRow>
           ) : (
-            table.getRowModel().rows.map((row) => <DataRow key={row.id} row={row} />)
+            table.getRowModel().rows.map((row, index) => (
+              <DataRow key={row.id} row={row} index={index} />
+            ))
           )}
         </TableBody>
       </Table>
@@ -262,18 +269,18 @@ function HeaderCell({ header }: { header: any }) {
   const canSort = header.column.getCanSort();
   const sorted = header.column.getIsSorted();
   return (
-    <TableHead key={header.id} className={meta?.className}>
+    <TableHead key={header.id} className={cn("text-center", meta?.className)}>
       {header.isPlaceholder ? null : (
         <div
           className={
             canSort
-              ? "flex cursor-pointer items-center gap-1 select-none"
+              ? "flex cursor-pointer items-center justify-center gap-1 select-none"
               : undefined
           }
           onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
           title={canSort ? "点击排序" : undefined}
         >
-          <span className="flex-1">
+          <span>
             {flexRender(header.column.columnDef.header, header.getContext())}
           </span>
           {canSort && <SortIcon sorted={sorted} />}
@@ -283,17 +290,19 @@ function HeaderCell({ header }: { header: any }) {
   );
 }
 
-/** 数据行:选中状态 + 单元格渲染 */
-function DataRow({ row }: { row: any }) {
+/** 数据行:选中状态 + 单元格渲染 + 斑马行(偶数行浅底) */
+function DataRow({ row, index }: { row: any; index: number }) {
   return (
     <TableRow
       key={row.id}
       data-state={row.getIsSelected() ? "selected" : undefined}
+      // 偶数行加浅底;hover/selected 状态的更深底色会自动覆盖
+      className={index % 2 === 1 ? "bg-muted/30" : undefined}
     >
       {row.getVisibleCells().map((cell: any) => {
         const meta = cell.column.columnDef.meta;
         return (
-          <TableCell key={cell.id} className={meta?.className}>
+          <TableCell key={cell.id} className={cn("text-center", meta?.className)}>
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </TableCell>
         );

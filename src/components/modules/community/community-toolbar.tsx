@@ -106,7 +106,7 @@ export function CommunityToolbar({
           triggerClassName="min-w-40"
         />
 
-        <Button variant="ghost" size="sm" onClick={reset}>
+        <Button variant="outline" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
           重置
         </Button>
@@ -126,7 +126,7 @@ export function CommunityToolbar({
       <div className="flex items-center gap-2 justify-end">
         {selectedCount > 0 && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={onBatchDelete}
             className="text-danger hover:bg-danger-soft"
