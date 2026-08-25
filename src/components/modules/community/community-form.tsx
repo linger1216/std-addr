@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,39 +16,55 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { RegionOption } from "@/components/modules/community/community-toolbar";
+import { SearchSelect } from "@/components/ui/search-select";
+import type { RegionOption } from "./community-toolbar";
+import type { RouterOutputs } from "@/trpc/react";
 
+/** 详情类型 = getById 输出(单一事实来源) */
+export type CommunityDetail = NonNullable<
+  RouterOutputs["community"]["getById"]
+>;
+
+/** 表单值(字符串形态,提交时再解析 JSON) */
 export type CommunityFormValues = {
-  id?: string | null;
+  id: string | null;
   name: string;
   alias: string;
   regionId: string;
   status: 0 | 1;
-  address: string; // JSON 文本,提交时尝试解析
-  geom: string;
+  address: string; // JSON 文本
+  geom: string; // JSON 文本
 };
 
-export type CommunityDetail = {
-  id: string;
-  name: string;
-  alias: string | null;
-  regionId: string | null;
-  status: number;
-  address: unknown;
-  geom: unknown;
-  createdAt: Date;
-  updatedAt: Date;
-};
+/** JSON 字符串校验:空串 OK,非空必须可解析 */
+const jsonString = z
+  .string()
+  .refine(
+    (v) => !v.trim() || (() => {
+      try {
+        JSON.parse(v);
+        return true;
+      } catch {
+        return false;
+      }
+    })(),
+    { message: "不是合法 JSON" },
+  );
 
-const EMPTY: CommunityFormValues = {
+const formSchema = z.object({
+  id: z.string().nullable(),
+  name: z.string().trim().min(1, "请输入小区名称").max(100, "名称最长 100 字"),
+  alias: z.string().trim().max(100, "别名最长 100 字"),
+  regionId: z.string(),
+  status: z.union([z.literal(0), z.literal(1)]),
+  address: jsonString,
+  geom: jsonString,
+});
+
+type FormSchema = z.infer<typeof formSchema>;
+
+const EMPTY: FormSchema = {
   id: null,
   name: "",
   alias: "",
@@ -54,6 +73,36 @@ const EMPTY: CommunityFormValues = {
   address: "",
   geom: "",
 };
+
+/** 详情 → 表单初值(JSON 字段 stringify 回文本) */
+function toForm(initial: CommunityDetail | CommunityFormValues | null): FormSchema {
+  if (!initial) return EMPTY;
+  if ("createdAt" in initial) {
+    return {
+      id: initial.id,
+      name: initial.name,
+      alias: initial.alias ?? "",
+      regionId: initial.regionId ?? "",
+      status: initial.status === 0 ? 0 : 1,
+      address: initial.address ? JSON.stringify(initial.address, null, 2) : "",
+      geom: initial.geom ? JSON.stringify(initial.geom, null, 2) : "",
+    };
+  }
+  return { ...EMPTY, ...initial };
+}
+
+/** 表单 → 提交值(去掉 trim + 转换 id) */
+function toSubmit(values: FormSchema): CommunityFormValues {
+  return {
+    id: values.id,
+    name: values.name.trim(),
+    alias: values.alias.trim(),
+    regionId: values.regionId,
+    status: values.status,
+    address: values.address,
+    geom: values.geom,
+  };
+}
 
 export function CommunityFormDialog({
   open,
@@ -70,73 +119,26 @@ export function CommunityFormDialog({
   onSubmit: (values: CommunityFormValues) => void;
   isPending: boolean;
 }) {
-  const [form, setForm] = useState<CommunityFormValues>(EMPTY);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    register,
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormSchema>({
+    resolver: zodResolver(formSchema),
+    defaultValues: EMPTY,
+  });
 
-  const isEdit = useMemo(() => {
-    if (!initial) return false;
-    if ("createdAt" in initial) return true;
-    return Boolean(initial.id);
-  }, [initial]);
-
+  // 打开 / 切换 initial 时同步表单
   useEffect(() => {
-    if (!open) return;
-    if (initial) {
-      if ("createdAt" in initial) {
-        setForm({
-          id: initial.id,
-          name: initial.name,
-          alias: initial.alias ?? "",
-          regionId: initial.regionId ?? "",
-          status: initial.status === 0 ? 0 : 1,
-          address: initial.address ? JSON.stringify(initial.address, null, 2) : "",
-          geom: initial.geom ? JSON.stringify(initial.geom, null, 2) : "",
-        });
-      } else {
-        setForm({ ...EMPTY, ...initial });
-      }
-    } else {
-      setForm(EMPTY);
-    }
-    setError(null);
-  }, [open, initial]);
+    if (open) reset(toForm(initial));
+  }, [open, initial, reset]);
 
-  function handleSubmit() {
-    setError(null);
-    if (!form.name.trim()) {
-      setError("请输入小区名称");
-      return;
-    }
-    // 简单本地校验:非空 JSON 字段必须能解析
-    if (form.address.trim()) {
-      try {
-        JSON.parse(form.address);
-      } catch (err) {
-        setError(
-          `address 不是合法 JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return;
-      }
-    }
-    if (form.geom.trim()) {
-      try {
-        JSON.parse(form.geom);
-      } catch (err) {
-        setError(
-          `geom 不是合法 JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return;
-      }
-    }
-    onSubmit({
-      id: form.id,
-      name: form.name.trim(),
-      alias: form.alias.trim(),
-      regionId: form.regionId,
-      status: form.status,
-      address: form.address,
-      geom: form.geom,
-    });
+  const isEdit = initial != null && "createdAt" in initial;
+
+  function handleValid(values: FormSchema) {
+    onSubmit(toSubmit(values));
   }
 
   return (
@@ -149,116 +151,133 @@ export function CommunityFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit(handleValid)} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="c-name">名称 *</Label>
+            <Field label="名称 *" error={errors.name?.message}>
               <Input
                 id="c-name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="例如:阳光花园"
+                aria-invalid={!!errors.name}
+                {...register("name")}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="c-alias">别名</Label>
+            </Field>
+            <Field label="别名" error={errors.alias?.message}>
               <Input
                 id="c-alias"
-                value={form.alias}
-                onChange={(e) => setForm({ ...form, alias: e.target.value })}
                 placeholder="可留空"
+                aria-invalid={!!errors.alias}
+                {...register("alias")}
               />
-            </div>
+            </Field>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="c-region">所属区划</Label>
-              <Select
-                value={form.regionId}
-                items={[
-                  { value: "", label: "未指定" },
-                  ...regions.map((r) => ({ value: r.id, label: r.name })),
-                ]}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    regionId: v ? String(v) : "",
-                  })
-                }
-              >
-                <SelectTrigger id="c-region" className="h-9">
-                  <SelectValue placeholder="选择区划" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">未指定</SelectItem>
-                  {regions.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="c-status">状态</Label>
-              <Select
-                value={String(form.status)}
-                items={[
-                  { value: "1", label: "启用" },
-                  { value: "0", label: "禁用" },
-                ]}
-                onValueChange={(v) =>
-                  setForm({ ...form, status: (Number(v) as 0 | 1) })
-                }
-              >
-                <SelectTrigger id="c-status" className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">启用</SelectItem>
-                  <SelectItem value="0">禁用</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Field label="所属区划">
+              <Controller
+                control={control}
+                name="regionId"
+                render={({ field }) => (
+                  <SearchSelect
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    options={[
+                      { value: "", label: "未指定" },
+                      ...regions.map((r) => ({ value: r.id, label: r.name })),
+                    ]}
+                    placeholder="选择区划"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
+              />
+            </Field>
+            <Field label="状态">
+              <Controller
+                control={control}
+                name="status"
+                render={({ field }) => (
+                  <SearchSelect<string>
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                    options={[
+                      { value: "1", label: "启用" },
+                      { value: "0", label: "禁用" },
+                    ]}
+                    placeholder="状态"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
+              />
+            </Field>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="c-address">address (JSON 字符串)</Label>
+          <Field
+            label="address (JSON 字符串)"
+            hint="留空表示不修改,非空必须是合法 JSON"
+            error={errors.address?.message}
+          >
             <Textarea
               id="c-address"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
               placeholder='例如:{"province":"北京","city":"北京","district":"朝阳区"}'
+              aria-invalid={!!errors.address}
               className="min-h-20 font-mono text-[12px]"
+              {...register("address")}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="c-geom">geom (JSON 字符串)</Label>
+          <Field
+            label="geom (JSON 字符串)"
+            hint="GeoJSON 格式,留空表示不修改"
+            error={errors.geom?.message}
+          >
             <Textarea
               id="c-geom"
-              value={form.geom}
-              onChange={(e) => setForm({ ...form, geom: e.target.value })}
               placeholder='例如:{"type":"Point","coordinates":[116.4,39.9]}'
+              aria-invalid={!!errors.geom}
               className="min-h-20 font-mono text-[12px]"
+              {...register("geom")}
             />
-          </div>
+          </Field>
 
-          {error && (
-            <p className="text-[12.5px] text-danger">{error}</p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "保存中…" : "保存"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "保存中…" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 字段行(Label + 错误提示) —— 抽出来消除重复 */
+function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+      {hint && !error && (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }

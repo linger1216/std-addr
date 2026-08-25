@@ -1,5 +1,6 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import {
   Download,
   Plus,
@@ -7,18 +8,13 @@ import {
   Search,
   SearchIcon,
   Trash2,
+  Upload,
+  X,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
+import { SearchSelect } from "@/components/ui/search-select";
 import { useCommunityFilters } from "./use-community-filters";
 
 export type RegionOption = { id: string; name: string };
@@ -28,23 +24,25 @@ export function CommunityToolbar({
   selectedCount,
   onCreate,
   onImport,
+  onExport,
   onBatchDelete,
 }: {
   regions: RegionOption[];
   selectedCount: number;
   onCreate: () => void;
   onImport: () => void;
+  onExport: () => void;
   onBatchDelete: () => void;
 }) {
-  // ponytail: 筛选状态由 zustand 管理,toolbar 直接读写 store。
   const draft = useCommunityFilters((s) => s.draft);
   const patchDraft = useCommunityFilters((s) => s.patchDraft);
   const commit = useCommunityFilters((s) => s.commit);
   const reset = useCommunityFilters((s) => s.reset);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3">
       <div className="flex flex-1 flex-wrap items-center gap-2">
+        {/* 关键字搜索 */}
         <div className="relative w-70">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -54,49 +52,59 @@ export function CommunityToolbar({
               if (e.key === "Enter") commit();
             }}
             placeholder="搜索名称 / 别名"
-            className="h-8 pl-8 pr-3 text-[13px]"
+            className="h-8 border-transparent pl-8 pr-7 text-[13px]"
           />
+          {/* 清空按钮:仅在有内容时显示,只清 draft 不 commit,
+              让用户可以继续输入或点搜索按钮 */}
+          <AnimatePresence>
+            {draft.q && (
+              <motion.button
+                type="button"
+                aria-label="清空搜索"
+                title="清空搜索"
+                onClick={() => patchDraft({ q: "" })}
+                onMouseDown={(e) => e.preventDefault()}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.12 }}
+                className="pointer-events-auto absolute top-1/2 right-2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full
+                text-muted-foreground transition-colors
+                hover:bg-secondary hover:text-foreground
+                focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <X className="size-3" />
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
 
-        <Select
+        {/* 区划筛选 */}
+        <SearchSelect
           value={draft.regionId}
-          items={[
+          onValueChange={(v) => patchDraft({ regionId: v ?? "" })}
+          options={[
             { value: "", label: "全部区划" },
             ...regions.map((r) => ({ value: r.id, label: r.name })),
           ]}
-          onValueChange={(v) => patchDraft({ regionId: v ? String(v) : "" })}
-        >
-          <SelectTrigger className="h-8 min-w-40 rounded-xl text-[13px]">
-            <SelectValue placeholder="所属区划" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">全部区划</SelectItem>
-            {regions.map((r) => (
-              <SelectItem key={r.id} value={r.id}>
-                {r.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          placeholder="所属区划"
+          triggerClassName="min-w-50"
+        />
 
-        <Select
+        {/* 状态筛选 */}
+        <SearchSelect<string>
           value={draft.status}
-          items={[
+          onValueChange={(v) =>
+            patchDraft({ status: v === "1" || v === "0" ? v : "" })
+          }
+          options={[
             { value: "", label: "全部状态" },
             { value: "1", label: "启用" },
             { value: "0", label: "禁用" },
           ]}
-          onValueChange={(v) => patchDraft({ status: v ?? "" })}
-        >
-          <SelectTrigger className="h-8 min-w-40 rounded-xl text-[13px]">
-            <SelectValue placeholder="状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">全部状态</SelectItem>
-            <SelectItem value="1">启用</SelectItem>
-            <SelectItem value="0">禁用</SelectItem>
-          </SelectContent>
-        </Select>
+          placeholder="状态"
+          triggerClassName="min-w-40"
+        />
 
         <Button variant="ghost" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
@@ -115,7 +123,7 @@ export function CommunityToolbar({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 justify-end">
         {selectedCount > 0 && (
           <Button
             variant="ghost"
@@ -127,14 +135,18 @@ export function CommunityToolbar({
             批量删除
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={onImport}>
+        <Button variant="outline" size="sm" onClick={onExport}>
           <Download className="size-3.5" />
+          导出
+        </Button>
+        <Button variant="outline" size="sm" onClick={onImport}>
+          <Upload className="size-3.5" />
           导入
         </Button>
-        <Button size="sm" onClick={onCreate}>
+        <MotionButton size="sm" onClick={onCreate}>
           <Plus className="size-3.5" />
           新建小区
-        </Button>
+        </MotionButton>
       </div>
     </div>
   );

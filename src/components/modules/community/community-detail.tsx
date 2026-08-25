@@ -9,7 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { formatDateTime, formatJson } from "@/lib/format";
+import { STATUS_LABEL, type StatusValue } from "@/lib/constants";
 
+/** 详情字段 —— 与 form 共享 schema 推导出的"业务模型" */
 type Detail = {
   id: string;
   name: string;
@@ -36,28 +39,25 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function fmtDate(d: Date | string): string {
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return String(d);
-  return date.toLocaleString("zh-CN", { hour12: false });
+/** JSON 字段的统一渲染容器 */
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
+      {formatJson(value)}
+    </pre>
+  );
 }
 
-function fmtJson(v: unknown): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "string") {
-    const s = v.trim();
-    if (!s) return "—";
-    try {
-      return JSON.stringify(JSON.parse(s), null, 2);
-    } catch {
-      return s;
-    }
-  }
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return Object.prototype.toString.call(v);
-  }
+/** 状态 badge:复用 STATUS_LABEL/STATUS_BADGE_CLASS(已提取到 lib/constants) */
+function StatusBadge({ status }: { status: number }) {
+  const v: StatusValue = status === 1 ? 1 : 0;
+  const tone =
+    v === 1
+      ? "bg-success-soft text-success-fg"
+      : "bg-danger-soft text-danger-fg";
+  return (
+    <Badge className={`border-transparent ${tone}`}>{STATUS_LABEL[v]}</Badge>
+  );
 }
 
 export function CommunityDetailDialog({
@@ -83,27 +83,15 @@ export function CommunityDetailDialog({
             <Row label="别名">{detail.alias ?? "—"}</Row>
             <Row label="所属区划">{detail.region?.name ?? "—"}</Row>
             <Row label="状态">
-              {detail.status === 1 ? (
-                <Badge className="border-transparent bg-success-soft text-success-fg">
-                  启用
-                </Badge>
-              ) : (
-                <Badge className="border-transparent bg-danger-soft text-danger-fg">
-                  禁用
-                </Badge>
-              )}
+              <StatusBadge status={detail.status} />
             </Row>
-            <Row label="创建时间">{fmtDate(detail.createdAt)}</Row>
-            <Row label="更新时间">{fmtDate(detail.updatedAt)}</Row>
+            <Row label="创建时间">{formatDateTime(detail.createdAt)}</Row>
+            <Row label="更新时间">{formatDateTime(detail.updatedAt)}</Row>
             <Row label="地址 (JSON)">
-              <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
-                {fmtJson(detail.address)}
-              </pre>
+              <JsonBlock value={detail.address} />
             </Row>
             <Row label="几何 (JSON)">
-              <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
-                {fmtJson(detail.geom)}
-              </pre>
+              <JsonBlock value={detail.geom} />
             </Row>
           </div>
         ) : (

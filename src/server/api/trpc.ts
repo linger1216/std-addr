@@ -8,11 +8,12 @@
  */
 
 import { initTRPC, TRPCError } from "@trpc/server";
-import superjson from "superjson";
 import { ZodError } from "zod";
 
 import { auth } from "@/server/auth";
 import { db } from "@/server/db";
+import { buildEnvelopeError } from "@/server/api/middleware/envelope-error";
+import { superjsonEnvelopeTransformer } from "@/lib/api/envelope-transformer";
 
 /**
  * 1. CONTEXT
@@ -40,18 +41,27 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
  * 2. INITIALIZATION
  *
  * This is where the tRPC API is initialized, connecting the context and transformer. We also parse
- * ZodErrors so that you get typesafety on the frontend if your procedure fails due to validation
+ * ZodErrors so that you get typesafety on the frontend if a procedure fails due to validation
  * errors on the backend.
  */
 const t = initTRPC.context<typeof createTRPCContext>().create({
-  transformer: superjson,
+  transformer: superjsonEnvelopeTransformer,
   errorFormatter({ shape, error }) {
+    const zodError =
+      error.cause instanceof ZodError ? error.cause.flatten() : null;
+    const envelope = buildEnvelopeError(
+      error.code,
+      error.message,
+      zodError,
+    );
+
+    // envelope 字段挂在 shape.data 下,前端 TRPCClientError.data.* 拿到
     return {
       ...shape,
       data: {
         ...shape.data,
-        zodError:
-          error.cause instanceof ZodError ? error.cause.flatten() : null,
+        ...envelope,
+        zodError,
       },
     };
   },
@@ -67,7 +77,7 @@ export const createCallerFactory = t.createCallerFactory;
 /**
  * 3. ROUTER & PROCEDURE (THE IMPORTANT BIT)
  *
- * These are the pieces you use to build your tRPC API. You should import these a lot in the
+ * These are the pieces you use to build the tRPC API. You should import these a lot in the
  * "/src/server/api/routers" directory.
  */
 
@@ -80,15 +90,11 @@ export const createTRPCRouter = t.router;
 
 /**
  * Middleware for timing procedure execution and adding an artificial delay in development.
- *
- * You can remove this if you don't like it, but it can help catch unwanted waterfalls by simulating
- * network latency that would occur in production but not in local development.
  */
 const timingMiddleware = t.middleware(async ({ next, path }) => {
   const start = Date.now();
 
   if (t._config.isDev) {
-    // artificial delay in dev
     const waitMs = Math.floor(Math.random() * 400) + 100;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
@@ -103,20 +109,12 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
 
 /**
  * Public (unauthenticated) procedure
- *
- * This is the base piece you use to build new queries and mutations on your tRPC API. It does not
- * guarantee that a user querying is authorized, but you can still access user session data if they
- * are logged in.
  */
-export const publicProcedure = t.procedure.use(timingMiddleware);
+export const publicProcedure = t.procedure
+  .use(timingMiddleware);
 
 /**
  * Protected (authenticated) procedure
- *
- * If you want a query or mutation to ONLY be accessible to logged in users, use this. It verifies
- * the session is valid and guarantees `ctx.session.user` is not null.
- *
- * @see https://trpc.io/docs/procedures
  */
 export const protectedProcedure = t.procedure
   .use(timingMiddleware)
@@ -126,7 +124,6 @@ export const protectedProcedure = t.procedure
     }
     return next({
       ctx: {
-        // infers the `session` as non-nullable
         session: { ...ctx.session, user: ctx.session.user },
       },
     });
@@ -134,9 +131,6 @@ export const protectedProcedure = t.procedure
 
 /**
  * Admin (role=admin) procedure
- *
- * Requires the logged-in user to have the `admin` role code. Used for
- * management routers (user / role / menu).
  */
 export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.session.user.role !== "admin") {

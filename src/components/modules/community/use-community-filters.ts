@@ -1,3 +1,8 @@
+/**
+ * 小区筛选 store —— 沿用 createCrudFiltersStore 工厂(与 road/poi/village 同一套)。
+ * 字段全部以 string 形态保存,空串代表"未筛选"。
+ */
+
 "use client";
 
 import { createCrudFiltersStore } from "@/store/use-crud-filters";

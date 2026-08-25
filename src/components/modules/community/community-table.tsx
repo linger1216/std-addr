@@ -1,10 +1,14 @@
 "use client";
 
-import { flexRender, type ColumnDef } from "@tanstack/react-table";
+import { memo } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { flexRender } from "@tanstack/react-table";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
   TableBody,
@@ -14,41 +18,29 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { TableSkeleton } from "@/components/ui/skeleton-blocks";
-import { useAppTable, createAppColumnHelper } from "@/lib/table";
+import { type useAppTable, createAppColumnHelper } from "@/lib/table";
+import { STATUS, STATUS_BADGE_CLASS, STATUS_LABEL, normalizeAddress, orEmpty } from "@/lib/constants";
+import { formatShortDate } from "@/lib/format";
+import type { RouterOutputs } from "@/trpc/react";
 
-export type CommunityRow = {
-  id: string;
-  name: string;
-  alias: string | null;
-  regionId: string | null;
-  regionName: string | null;
-  status: number;
-  createdAt: Date;
-};
-
-function fmtDate(d: Date | string): string {
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return String(d);
-  return date.toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-}
+/** 表格行 = list procedure 的 item 类型(单一事实来源) */
+export type CommunityRow =
+  RouterOutputs["community"]["list"]["items"][number];
 
 const columnHelper = createAppColumnHelper<CommunityRow>();
 
+/** 行级回调 —— 通过 column meta 透传给列定义使用 */
+type CommunityRowCallbacks = {
+  onView?: (row: CommunityRow) => void;
+  onEdit?: (row: CommunityRow) => void;
+  onDelete?: (row: CommunityRow) => void;
+};
+
 /**
- * 列定义:全选/半选/单项选中全部交给 TanStack 的 rowSelection 管理,
- * 不用手写 Set 与 toggleAll/toggleOne 回调。
+ * 列定义:全选/单选交给 TanStack rowSelection 管理,
+ * 行级操作按钮通过 column meta.callbacks 拿到回调。
  */
-export function createCommunityColumns(opts: {
-  onView: (row: CommunityRow) => void;
-  onEdit: (row: CommunityRow) => void;
-  onDelete: (row: CommunityRow) => void;
-}) {
-  const { onView, onEdit, onDelete } = opts;
+export function createCommunityColumns() {
   const h = columnHelper;
   return h.columns([
     h.display({
@@ -74,82 +66,70 @@ export function createCommunityColumns(opts: {
     }),
     columnHelper.accessor("name", {
       header: "名称",
-      cell: (info) => (
-        <span className="font-medium">{info.getValue()}</span>
-      ),
+      cell: (info) => <span className="font-medium">{info.getValue()}</span>,
     }),
     columnHelper.accessor("alias", {
       header: "别名",
       cell: (info) => (
-        <span className="text-muted-foreground">
-          {(info.getValue() as string | null) ?? "—"}
-        </span>
+        <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
       ),
     }),
     columnHelper.accessor("regionName", {
       header: "所属区划",
       cell: (info) => (
-        <span className="text-muted-foreground">
-          {(info.getValue() as string | null) ?? "—"}
-        </span>
+        <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
       ),
+    }),
+    columnHelper.accessor("address", {
+      header: "地址",
+      cell: (info) => <AddressCell value={info.getValue()} />,
+      meta: { className: "min-w-[200px]" },
     }),
     columnHelper.accessor("status", {
       header: "状态",
-      cell: (info) => {
-        const v = info.getValue() as number;
-        return (
-          <Badge
-            className={cn(
-              "border-transparent",
-              v === 1
-                ? "bg-success-soft text-success-fg"
-                : "bg-danger-soft text-danger-fg",
-            )}
-          >
-            {v === 1 ? "启用" : "禁用"}
-          </Badge>
-        );
-      },
+      cell: (info) => <StatusBadge status={info.getValue()} />,
       meta: { className: "w-24" },
     }),
     columnHelper.accessor("createdAt", {
       header: "创建时间",
       cell: (info) => (
         <span className="text-muted-foreground">
-          {fmtDate(info.getValue() as Date)}
+          {formatShortDate(info.getValue())}
         </span>
       ),
-      meta: { className: "w-32" },
+      meta: { className: "w-28" },
     }),
     h.display({
       id: "actions",
-      header: () => <div className="text-right">操作</div>,
-      cell: ({ row }) => {
+      header: () => <div className="text-center">操作</div>,
+      cell: ({ row, table }) => {
         const r = row.original;
+        // ponytail: 回调走 meta,避免每行透传 closure
+        const cb = (table.options.meta as { callbacks?: CommunityRowCallbacks })
+          ?.callbacks;
         return (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex items-center justify-center gap-0.5">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onView(r)}
-              className="h-7 px-2 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+              onClick={() => cb?.onView?.(r)}
+              className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
             >
               查看
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onEdit(r)}
-              className="h-7 px-2 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
+              onClick={() => cb?.onEdit?.(r)}
+              className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
             >
               编辑
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onDelete(r)}
-              className="h-7 px-2 text-[12.5px] font-normal text-danger hover:bg-danger-soft hover:text-danger"
+              onClick={() => cb?.onDelete?.(r)}
+              className="h-7 px-2 text-xs font-normal text-danger hover:bg-danger-soft hover:text-danger"
             >
               删除
             </Button>
@@ -161,70 +141,164 @@ export function createCommunityColumns(opts: {
   ]);
 }
 
+/** 地址列:多行渲染 */
+function AddressCell({ value }: { value: unknown }) {
+  const lines = normalizeAddress(value);
+  if (lines.length === 0) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+  return (
+    <div className="text-muted-foreground">
+      {lines.map((line, i) => (
+        <span key={i} className="block leading-tight">
+          {line}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** 状态 badge:复用 STATUS_BADGE_CLASS / STATUS_LABEL */
+function StatusBadge({ status }: { status: number }) {
+  const v: 0 | 1 = status === STATUS.ENABLED ? STATUS.ENABLED : STATUS.DISABLED;
+  return (
+    <Badge className={cn("border-transparent", STATUS_BADGE_CLASS[v])}>
+      {STATUS_LABEL[v]}
+    </Badge>
+  );
+}
+
+/** 排序状态图标:未排序 → 双向箭头(灰);升/降 → 实心箭头 */
+function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
+  return (
+    <span className="flex shrink-0 items-center">
+      <motion.span
+        initial={false}
+        animate={{ opacity: sorted ? 1 : 0.4 }}
+        transition={{ duration: 0.15 }}
+      >
+        {sorted === "asc" ? (
+          <ArrowUp className="size-3.5" />
+        ) : sorted === "desc" ? (
+          <ArrowDown className="size-3.5" />
+        ) : (
+          <ChevronsUpDown className="size-3.5" />
+        )}
+      </motion.span>
+    </span>
+  );
+}
+
 /**
- * 展示组件:只做 flexRender 渲染,选中/分页/排序等状态全由
- * 父级 useAppTable 实例提供,不自己造轮子。
+ * 展示组件:接收外部 table 实例 + 行回调。
+ * 选中/分页/排序等状态由父级 useCrudTable 统一管,不重复造轮子。
  */
-export function CommunityTable({
+export const CommunityTable = memo(function CommunityTable({
   table,
   isLoading,
+  callbacks,
 }: {
   table: ReturnType<typeof useAppTable<CommunityRow>>;
   isLoading: boolean;
+  callbacks: CommunityRowCallbacks;
 }) {
-  const colSpan = table.getHeaderGroups()[0]?.headers.length ?? 7;
-  const empty = !isLoading && table.getRowModel().rows.length === 0;
+  // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取
+  (table.options.meta as { callbacks?: CommunityRowCallbacks }).callbacks =
+    callbacks;
+
+  const headers = table.getHeaderGroups()[0]?.headers;
+  const colSpan = headers?.length ?? table.getAllLeafColumns().length;
+  const syncing = isLoading;
+  const empty = !syncing && table.getRowModel().rows.length === 0;
 
   return (
-    <Table containerClassName="h-full overflow-y-auto">
-      <TableHeader>
-        {table.getHeaderGroups().map((hg) => (
-          <TableRow key={hg.id}>
-            {hg.headers.map((header) => {
-              const meta = header.column.columnDef.meta as
-                | { className?: string }
-                | undefined;
-              return (
-                <TableHead key={header.id} className={meta?.className}>
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
-                </TableHead>
-              );
-            })}
-          </TableRow>
-        ))}
-      </TableHeader>
-      <TableBody>
-        {isLoading ? (
-          <TableSkeleton rows={4} cols={colSpan} />
-        ) : empty ? (
-          <TableRow>
-            <TableCell
-              colSpan={colSpan}
-              className="py-10 text-center text-muted-foreground"
-            >
-              暂无小区
-            </TableCell>
-          </TableRow>
-        ) : (
-          table.getRowModel().rows.map((row) => (
-            <TableRow
-              key={row.id}
-              data-state={row.getIsSelected() ? "selected" : undefined}
-            >
-              {row.getVisibleCells().map((cell) => (
-                <TableCell key={cell.id}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </TableCell>
+    <div className="relative h-full min-h-0">
+      <AnimatePresence>
+        {syncing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-[1px]"
+          >
+            <Spinner label="加载中…" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <Table containerClassName="h-full overflow-y-auto">
+        <TableHeader>
+          {table.getHeaderGroups().map((hg) => (
+            <TableRow key={hg.id}>
+              {hg.headers.map((header) => (
+                <HeaderCell key={header.id} header={header} />
               ))}
             </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {empty ? (
+            <TableRow>
+              <TableCell
+                colSpan={colSpan}
+                className="py-10 text-center text-muted-foreground"
+              >
+                暂无小区
+              </TableCell>
+            </TableRow>
+          ) : (
+            table.getRowModel().rows.map((row) => <DataRow key={row.id} row={row} />)
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+});
+
+/** 表头单元格(排序 + 点击) */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
+function HeaderCell({ header }: { header: any }) {
+  const meta = header.column.columnDef.meta;
+  const canSort = header.column.getCanSort();
+  const sorted = header.column.getIsSorted();
+  return (
+    <TableHead key={header.id} className={meta?.className}>
+      {header.isPlaceholder ? null : (
+        <div
+          className={
+            canSort
+              ? "flex cursor-pointer items-center gap-1 select-none"
+              : undefined
+          }
+          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+          title={canSort ? "点击排序" : undefined}
+        >
+          <span className="flex-1">
+            {flexRender(header.column.columnDef.header, header.getContext())}
+          </span>
+          {canSort && <SortIcon sorted={sorted} />}
+        </div>
+      )}
+    </TableHead>
   );
 }
+
+/** 数据行:选中状态 + 单元格渲染 */
+function DataRow({ row }: { row: any }) {
+  return (
+    <TableRow
+      key={row.id}
+      data-state={row.getIsSelected() ? "selected" : undefined}
+    >
+      {row.getVisibleCells().map((cell: any) => {
+        const meta = cell.column.columnDef.meta;
+        return (
+          <TableCell key={cell.id} className={meta?.className}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        );
+      })}
+    </TableRow>
+  );
+}
+/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */

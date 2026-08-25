@@ -1,13 +1,14 @@
 "use client";
 
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { httpBatchStreamLink, loggerLink } from "@trpc/client";
+import { httpBatchLink, loggerLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { type inferRouterInputs, type inferRouterOutputs } from "@trpc/server";
 import { useState } from "react";
-import SuperJSON from "superjson";
 
 import { type AppRouter } from "@/server/api/root";
+import { envelopeLink } from "@/lib/api/envelope-link";
+import { superjsonEnvelopeTransformer } from "@/lib/api/envelope-transformer";
 import { createQueryClient } from "./query-client";
 
 let clientQueryClientSingleton: QueryClient | undefined = undefined;
@@ -44,13 +45,17 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const [trpcClient] = useState(() =>
     api.createClient({
       links: [
+        // envelopeLink 必须放在最外层:先解包响应再交给 logger/下游
+        envelopeLink(),
+        // ponytail: 仅在请求失败时打印,平时保持安静
         loggerLink({
           enabled: (op) =>
-            process.env.NODE_ENV === "development" ||
-            (op.direction === "down" && op.result instanceof Error),
+            op.direction === "down" && op.result instanceof Error,
         }),
-        httpBatchStreamLink({
-          transformer: SuperJSON,
+        httpBatchLink({
+          // 必须与服务端 initTRPC 用同一个 transformer(SuperJSON + envelope),
+          // 否则服务端包了 envelope 客户端解不开,data 永远拿不到
+          transformer: superjsonEnvelopeTransformer,
           url: getBaseUrl() + "/api/trpc",
           headers: () => {
             const headers = new Headers();
