@@ -1,5 +1,6 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
+import { motion, type HTMLMotionProps } from "motion/react"
 
 import { cn } from "@/lib/utils"
 
@@ -63,4 +64,45 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/**
+ * 带 motion 动效的按钮:原生 <button> + 复用 buttonVariants。
+ * 外观(边框/尺寸)完全不变,hover 时按钮内部一条斜向光带
+ * 从左扫到右(shine sweep),用 motion variants 传播实现。
+ * ponytail: 主 CTA / 工具栏按钮用这个,行内 ghost 按钮保持原样。
+ */
+function MotionButton({
+  className,
+  variant = "default",
+  size = "default",
+  children,
+  ...props
+}: HTMLMotionProps<"button"> &
+  VariantProps<typeof buttonVariants> & {
+    className?: string;
+    children?: React.ReactNode;
+  }) {
+  return (
+    <motion.button
+      data-slot="button"
+      whileHover="hover"
+      className={cn(
+        buttonVariants({ variant, size, className }),
+        "relative overflow-hidden",
+      )}
+      {...props}
+    >
+      {/* 内容保持在扫光带上层 */}
+      <span className="relative z-20 flex items-center gap-2">{children}</span>
+      {/* 扫光带:初始左外 -75%,hover 扫到右外 125%;x 相对自身宽度 */}
+      <motion.span
+        aria-hidden
+        variants={{ hover: { x: "400%" } }}
+        initial={false}
+        transition={{ duration: 0.85, ease: "easeInOut" }}
+        className="pointer-events-none absolute top-0 left-[-75%] z-10 h-full w-[50%] rotate-12 bg-white/25 blur-lg"
+      />
+    </motion.button>
+  )
+}
+
+export { Button, MotionButton, buttonVariants }

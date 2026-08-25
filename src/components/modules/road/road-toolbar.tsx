@@ -2,6 +2,7 @@
 
 import {
   Download,
+  Upload,
   Plus,
   RotateCcw,
   Search,
@@ -9,15 +10,9 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchSelect } from "@/components/ui/search-select";
 
 import { useRoadFilters } from "./use-road-filters";
 
@@ -25,11 +20,13 @@ export function RoadToolbar({
   selectedCount,
   onCreate,
   onImport,
+  onExport,
   onBatchDelete,
 }: {
   selectedCount: number;
   onCreate: () => void;
   onImport: () => void;
+  onExport: () => void;
   onBatchDelete: () => void;
 }) {
   // ponytail: 筛选 state 由 useRoadFilters(zustand) 管理
@@ -54,24 +51,17 @@ export function RoadToolbar({
           />
         </div>
 
-        <Select
+        <SearchSelect<string>
           value={draft.status}
-          items={[
+          onValueChange={(v) => patchDraft({ status: v ?? "" })}
+          options={[
             { value: "", label: "全部状态" },
             { value: "1", label: "启用" },
             { value: "0", label: "禁用" },
           ]}
-          onValueChange={(v) => patchDraft({ status: v ?? "" })}
-        >
-          <SelectTrigger className="h-8 min-w-[120px] rounded-xl bg-secondary text-[13px]">
-            <SelectValue placeholder="状态" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">全部状态</SelectItem>
-            <SelectItem value="1">启用</SelectItem>
-            <SelectItem value="0">禁用</SelectItem>
-          </SelectContent>
-        </Select>
+          placeholder="状态"
+          triggerClassName="min-w-40"
+        />
 
         <Button variant="ghost" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
@@ -102,14 +92,18 @@ export function RoadToolbar({
             批量删除
           </Button>
         )}
-        <Button variant="ghost" size="sm" onClick={onImport}>
+        <Button variant="outline" size="sm" onClick={onExport}>
           <Download className="size-3.5" />
+          导出
+        </Button>
+        <Button variant="outline" size="sm" onClick={onImport}>
+          <Upload className="size-3.5" />
           导入
         </Button>
-        <Button size="sm" onClick={onCreate}>
+        <MotionButton size="sm" onClick={onCreate}>
           <Plus className="size-3.5" />
           新建道路
-        </Button>
+        </MotionButton>
       </div>
     </div>
   );

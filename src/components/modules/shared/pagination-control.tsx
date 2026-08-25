@@ -3,19 +3,16 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { PAGE_SIZES } from "@/lib/constants";
 
 /**
- * 列表分页器:
- * - 左:每页条数 select + 共 X 条
- * - 右:上一页 / 页码 / 下一页(active 用 bg-foreground text-background rounded-xl)
+ * 列表分页器(公共控件):
+ * - 左:每页条数[10/20/50/100] 一排按钮 + 共 X 条
+ * - 右:上一页 / 页码 / 下一页(active 用 bg-primary text-primary-foreground)
+ *
+ * ponytail: 每页条数固定 4 档,用按钮组比 Select 更直观、
+ * 避免 base-ui Select 的滚动箭头交互。
  */
 export function PaginationControl({
   page,
@@ -38,24 +35,29 @@ export function PaginationControl({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 pt-3">
-      <div className="flex items-center gap-3 text-[12.5px] text-muted-foreground">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span>每页</span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => onPageSizeChange(Number(v))}
-          >
-            <SelectTrigger className="h-7 min-w-[92px] rounded-md bg-card px-2 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[10, 20, 50, 100].map((n) => (
-                <SelectItem key={n} value={String(n)}>
+          <div className="flex items-center rounded-lg bg-secondary p-0.5">
+            {PAGE_SIZES.map((n) => {
+              const active = n === pageSize;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => onPageSizeChange(n)}
+                  className={cn(
+                    "h-6 rounded-md px-2.5 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-card text-foreground shadow-(--shadow-card)"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
                   {n}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <span>共 {total.toLocaleString()} 条</span>
       </div>
@@ -74,7 +76,7 @@ export function PaginationControl({
           p === "..." ? (
             <span
               key={`gap-${i}`}
-              className="px-1 text-[12.5px] text-muted-foreground"
+              className="px-1 text-xs text-muted-foreground"
             >
               …
             </span>
@@ -84,7 +86,7 @@ export function PaginationControl({
               type="button"
               onClick={() => onPageChange(p)}
               className={cn(
-                "inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
+                "inline-flex h-7 min-w-7 items-center justify-center rounded-xl px-2.5 text-xs font-medium transition-colors",
                 p === safePage
                   ? "bg-primary text-primary-foreground"
                   : "text-foreground hover:bg-muted",

@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 import {
-  CsvImportDialog,
+  ExcelImportDialog,
   type ImportResult,
   type ImportRow,
-} from "@/components/modules/shared/csv-import";
+} from "@/components/modules/shared/excel-import";
 import { PaginationControl } from "@/components/modules/shared/pagination-control";
 import { VillageDetailDialog } from "@/components/modules/village/village-detail";
 import {
@@ -18,6 +20,7 @@ import {
 } from "@/components/modules/village/village-form";
 import { VillageStats } from "@/components/modules/village/village-stats";
 import {
+  createVillageColumns,
   VillageTable,
   type VillageRow,
 } from "@/components/modules/village/village-table";
@@ -26,7 +29,9 @@ import {
   VillageToolbar,
 } from "@/components/modules/village/village-toolbar";
 import { useVillageFilters } from "@/components/modules/village/use-village-filters";
-import { Button } from "@/components/ui/button";
+import { useAppTable } from "@/lib/table";
+import { toErrorMessage } from "@/lib/constants";
+import { Button, MotionButton } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -39,25 +44,13 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Reveal } from "@/components/ui/reveal";
 import { api } from "@/trpc/react";
 
-type ListItem = {
-  id: string;
-  name: string;
-  alias: string | null;
-  regionId: string | null;
-  regionName: string | null;
-  status: number;
-  createdAt: Date | string;
-};
-
 function parseOptionalJson(label: string, raw: string): unknown {
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return undefined;
   try {
     return JSON.parse(trimmed);
   } catch (err) {
-    throw new Error(
-      `${label} 不是合法 JSON: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw new Error(`${label} 不是合法 JSON: ${toErrorMessage(err)}`);
   }
 }
 
@@ -66,11 +59,13 @@ export function VillageClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // ponytail: 筛选 state 由 useVillageFilters(zustand) 管理
   const committed = useVillageFilters((s) => s.committed);
 
-  // 选中
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 选中:交给 TanStack rowSelection
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // 排序:手动排序由 server 执行
+  const [sorting, setSorting] = useState<SortingState>([]);
 
   // 表单 dialog
   const [formOpen, setFormOpen] = useState(false);
@@ -88,7 +83,7 @@ export function VillageClient() {
   const [importOpen, setImportOpen] = useState(false);
 
   // tRPC queries
-  const utils = api.useUtils();
+  const rpc = api.useUtils();
   const listInput = useMemo(
     () => ({
       page,
@@ -96,8 +91,14 @@ export function VillageClient() {
       q: committed.q || undefined,
       regionId: committed.regionId || undefined,
       status: committed.status === "" ? undefined : (Number(committed.status) as 0 | 1),
+      sort: sorting.length > 0
+        ? sorting.map((sx) => ({
+            id: sx.id as "name" | "alias" | "regionName" | "status" | "createdAt",
+            desc: sx.desc,
+          }))
+        : undefined,
     }),
-    [page, pageSize, committed],
+    [page, pageSize, committed, sorting],
   );
 
   const { data: listData, isLoading: listLoading } =
@@ -118,13 +119,17 @@ export function VillageClient() {
     [regions],
   );
 
+  const invalidateList = async () => {
+    await Promise.all([
+      rpc.village.list.invalidate(),
+      rpc.village.stats.invalidate(),
+    ]);
+  };
+
   // Mutations
   const createMut = api.village.create.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.village.list.invalidate(),
-        utils.village.stats.invalidate(),
-      ]);
+      await invalidateList();
       toast.success("村已创建");
       setFormOpen(false);
       setEditingId(null);
@@ -133,10 +138,7 @@ export function VillageClient() {
   });
   const updateMut = api.village.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.village.list.invalidate(),
-        utils.village.stats.invalidate(),
-      ]);
+      await invalidateList();
       toast.success("村已更新");
       setFormOpen(false);
       setEditingId(null);
@@ -145,34 +147,25 @@ export function VillageClient() {
   });
   const deleteMut = api.village.delete.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.village.list.invalidate(),
-        utils.village.stats.invalidate(),
-      ]);
+      await invalidateList();
       toast.success("已删除");
       setDeleteRow(null);
-      setSelected(new Set());
+      setRowSelection({});
     },
     onError: (e) => toast.error(e.message),
   });
   const deleteManyMut = api.village.deleteMany.useMutation({
     onSuccess: async (res) => {
-      await Promise.all([
-        utils.village.list.invalidate(),
-        utils.village.stats.invalidate(),
-      ]);
+      await invalidateList();
       toast.success(`已删除 ${res.count} 条`);
       setBatchDeleteOpen(false);
-      setSelected(new Set());
+      setRowSelection({});
     },
     onError: (e) => toast.error(e.message),
   });
   const importMut = api.village.import.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.village.list.invalidate(),
-        utils.village.stats.invalidate(),
-      ]);
+      await invalidateList();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -189,54 +182,41 @@ export function VillageClient() {
     setFormOpen(true);
   }, [editingId, editingData]);
 
-  // 数据切换时丢掉过期的选中
+  // 排序变化回到第一页
   useEffect(() => {
-    if (!listData?.items) return;
-    const valid = new Set(listData.items.map((i) => i.id));
-    setSelected((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id);
-      });
-      return next;
-    });
-  }, [listData?.items]);
+    setPage(1);
+  }, [sorting]);
 
-  const rows: VillageRow[] = useMemo(
-    () =>
-      (listData?.items ?? []).map((item: ListItem) => ({
-        id: item.id,
-        name: item.name,
-        alias: item.alias,
-        regionId: item.regionId,
-        regionName: item.regionName,
-        status: item.status,
-        createdAt:
-          item.createdAt instanceof Date
-            ? item.createdAt
-            : new Date(item.createdAt),
-      })),
-    [listData?.items],
-  );
+  // 类型来自 router 输出(superjson 已转 Date),不必手写 map
+  const rows: VillageRow[] = listData?.items ?? [];
 
   const total = listData?.total ?? 0;
-  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
 
-  function handleToggleAll(next: boolean) {
-    if (next) {
-      setSelected(new Set(rows.map((r) => r.id)));
-    } else {
-      setSelected(new Set());
-    }
-  }
-  function handleToggleOne(id: string, next: boolean) {
-    setSelected((prev) => {
-      const ns = new Set(prev);
-      if (next) ns.add(id);
-      else ns.delete(id);
-      return ns;
-    });
-  }
+  // 列定义缓存
+  const columns = useMemo(
+    () =>
+      createVillageColumns({
+        onView: openView,
+        onEdit: openEdit,
+        onDelete: handleDelete,
+      }),
+     
+    [],
+  );
+
+  const table = useAppTable({
+    data: rows,
+    columns,
+    state: { rowSelection, sorting },
+    onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
+    manualSorting: true,
+  });
+
+  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id);
+  const selectCount = selectedIds.length;
 
   function openCreate() {
     setEditingId(null);
@@ -256,11 +236,18 @@ export function VillageClient() {
     try {
       geom = parseOptionalJson("geom", values.geom);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+      toast.error(toErrorMessage(err));
       return;
     }
 
-    const geomVal = (geom ?? null) as never;
+    const geomVal = (geom ?? null) as
+      | string
+      | number
+      | boolean
+      | Record<string, unknown>
+      | unknown[]
+      | null
+      | undefined;
 
     if (values.id) {
       updateMut.mutate({
@@ -293,21 +280,22 @@ export function VillageClient() {
     setBatchDeleteOpen(true);
   }
   function confirmBatchDelete() {
-    if (selected.size === 0) return;
-    deleteManyMut.mutate({ ids: Array.from(selected) });
+    if (selectCount === 0) return;
+    deleteManyMut.mutate({ ids: selectedIds });
   }
 
   async function handleImport(
     rows: ImportRow[],
   ): Promise<ImportResult | undefined> {
     const coerced = rows.map((r) => {
+      const rawStatus = Number(r.status);
       const status: 0 | 1 | undefined =
-        r.status === "0" ? 0 : r.status === "1" ? 1 : undefined;
+        rawStatus === 0 || rawStatus === 1 ? rawStatus : undefined;
       return {
         name: r.name ?? "",
-        ...(r.alias ? { alias: r.alias } : {}),
-        ...(r.regionId ? { regionId: r.regionId } : {}),
-        ...(status !== undefined ? { status } : {}),
+        alias: r.alias || undefined,
+        regionId: r.regionId || undefined,
+        status,
       };
     });
     return new Promise<ImportResult | undefined>((resolve) => {
@@ -331,89 +319,84 @@ export function VillageClient() {
     });
   }
 
-  const editingFormInitial = useMemo<VillageDetail | null>(() => {
-    if (!editingId) return null;
-    if (!editingData) return null;
-    return {
-      id: editingData.id,
-      name: editingData.name,
-      alias: editingData.alias,
-      regionId: editingData.regionId,
-      status: editingData.status,
-      geom: editingData.geom,
-      createdAt:
-        editingData.createdAt instanceof Date
-          ? editingData.createdAt
-          : new Date(editingData.createdAt),
-      updatedAt:
-        editingData.updatedAt instanceof Date
-          ? editingData.updatedAt
-          : new Date(editingData.updatedAt),
-    };
-  }, [editingId, editingData]);
+  /** 导出当前筛选条件下的全部村到 .xlsx */
+  async function handleExport() {
+    try {
+      const items = await rpc.village.exportAll.fetch({
+        q: committed.q || undefined,
+        regionId: committed.regionId || undefined,
+        status:
+          committed.status === ""
+            ? undefined
+            : (Number(committed.status) as 0 | 1),
+        sort:
+          sorting.length > 0
+            ? sorting.map((sx) => ({
+                id: sx.id as "name" | "alias" | "regionName" | "status" | "createdAt",
+                desc: sx.desc,
+              }))
+            : undefined,
+      });
 
-  const detail = useMemo<VillageDetail | null>(() => {
-    if (!detailData) return null;
-    return {
-      id: detailData.id,
-      name: detailData.name,
-      alias: detailData.alias,
-      regionId: detailData.regionId,
-      status: detailData.status,
-      geom: detailData.geom,
-      createdAt:
-        detailData.createdAt instanceof Date
-          ? detailData.createdAt
-          : new Date(detailData.createdAt),
-      updatedAt:
-        detailData.updatedAt instanceof Date
-          ? detailData.updatedAt
-          : new Date(detailData.updatedAt),
-    };
-  }, [detailData]);
+      const rows = items.map((it) => ({
+        "名称": it.name,
+        "别名": it.alias ?? "",
+        "所属区划ID": it.regionId ?? "",
+        "状态": it.status === 1 ? 1 : 0,
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 28 }, { wch: 18 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "村");
+      XLSX.writeFile(wb, `村_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success(`已导出 ${rows.length} 条`);
+    } catch (err) {
+      toast.error(toErrorMessage(err));
+    }
+  }
+
+  // getById 输出即 VillageDetail(superjson 已转 Date)
+  const editingFormInitial: VillageDetail | null = editingId && editingData
+    ? (editingData)
+    : null;
+
+  const detail: VillageDetail | null = detailData
+    ? (detailData)
+    : null;
 
   return (
-    <div className="space-y-5">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <PageHeader
         title="村管理"
         description="维护自然村与行政村基础信息"
         actions={
-          <Button onClick={openCreate}>
+          <MotionButton onClick={openCreate}>
             <Plus className="size-4" />
             新建村
-          </Button>
+          </MotionButton>
         }
       />
 
-      <Reveal>
+      <Reveal className="shrink-0">
         <VillageStats stats={stats} />
       </Reveal>
 
-      <Reveal delay={60}>
+      <Reveal delay={60} className="shrink-0">
         <VillageToolbar
           regions={regionOptions}
-          selectedCount={selected.size}
+          selectedCount={selectCount}
           onCreate={openCreate}
           onImport={() => setImportOpen(true)}
+          onExport={handleExport}
           onBatchDelete={handleBatchDelete}
         />
       </Reveal>
 
-      <Reveal delay={120}>
-        <VillageTable
-          rows={rows}
-          isLoading={listLoading}
-          selectedIds={selected}
-          onToggleAll={handleToggleAll}
-          onToggleOne={handleToggleOne}
-          allSelected={allSelected}
-          onView={openView}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-        />
+      <Reveal delay={120} className="min-h-0 flex-1">
+        <VillageTable table={table} isLoading={listLoading} />
       </Reveal>
 
-      <Reveal delay={180}>
+      <div className="shrink-0">
         <PaginationControl
           page={page}
           pageSize={pageSize}
@@ -424,7 +407,7 @@ export function VillageClient() {
             setPage(1);
           }}
         />
-      </Reveal>
+      </div>
 
       <VillageFormDialog
         open={formOpen}
@@ -460,19 +443,20 @@ export function VillageClient() {
         }
       />
 
-      <CsvImportDialog
+      <ExcelImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
         title="导入村"
-        description="支持 CSV(header: name,alias,regionId,status)或 JSON 数组。"
+        description="仅支持 Excel(.xlsx/.xls)。可先下载模板填写后导入。"
         fields={[
-          { key: "name", label: "名称", required: true },
-          { key: "alias", label: "别名" },
-          { key: "regionId", label: "区划 ID" },
-          { key: "status", label: "状态" },
+          { key: "name", label: "名称", required: true, width: 24 },
+          { key: "alias", label: "别名", width: 20 },
+          { key: "regionId", label: "所属区划ID", width: 28 },
+          { key: "status", label: "状态(1启用/0禁用)", width: 20 },
         ]}
         onSubmit={handleImport}
         isPending={importMut.isPending}
+        fileNamePrefix="村导入模板"
       />
 
       {/* 单条删除 confirm */}
@@ -510,7 +494,7 @@ export function VillageClient() {
           <DialogHeader>
             <DialogTitle>批量删除</DialogTitle>
             <DialogDescription>
-              {`确定删除选中的 ${selected.size} 个村?此操作不可恢复。`}
+              {`确定删除选中的 ${selectCount} 个村?此操作不可恢复。`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -519,7 +503,7 @@ export function VillageClient() {
             </Button>
             <Button
               onClick={confirmBatchDelete}
-              disabled={deleteManyMut.isPending || selected.size === 0}
+              disabled={deleteManyMut.isPending || selectCount === 0}
               className="bg-danger text-white hover:bg-danger/90"
             >
               {deleteManyMut.isPending ? "删除中…" : "删除"}

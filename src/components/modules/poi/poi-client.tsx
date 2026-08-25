@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 import {
-  CsvImportDialog,
+  ExcelImportDialog,
   type ImportResult,
   type ImportRow,
-} from "@/components/modules/shared/csv-import";
+} from "@/components/modules/shared/excel-import";
 import { PaginationControl } from "@/components/modules/shared/pagination-control";
 import {
   PoiFormDialog,
@@ -86,7 +87,7 @@ export function PoiClient() {
   const [importOpen, setImportOpen] = useState(false);
 
   // tRPC queries
-  const utils = api.useUtils();
+  const rpc = api.useUtils();
   const listInput = useMemo(
     () => ({
       page,
@@ -121,8 +122,8 @@ export function PoiClient() {
   const createMut = api.poi.create.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.poi.list.invalidate(),
-        utils.poi.stats.invalidate(),
+        rpc.poi.list.invalidate(),
+        rpc.poi.stats.invalidate(),
       ]);
       toast.success("POI 已创建");
       setFormOpen(false);
@@ -133,8 +134,8 @@ export function PoiClient() {
   const updateMut = api.poi.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.poi.list.invalidate(),
-        utils.poi.stats.invalidate(),
+        rpc.poi.list.invalidate(),
+        rpc.poi.stats.invalidate(),
       ]);
       toast.success("POI 已更新");
       setFormOpen(false);
@@ -145,8 +146,8 @@ export function PoiClient() {
   const deleteMut = api.poi.delete.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.poi.list.invalidate(),
-        utils.poi.stats.invalidate(),
+        rpc.poi.list.invalidate(),
+        rpc.poi.stats.invalidate(),
       ]);
       toast.success("已删除");
       setDeleteRow(null);
@@ -157,8 +158,8 @@ export function PoiClient() {
   const deleteManyMut = api.poi.deleteMany.useMutation({
     onSuccess: async (res) => {
       await Promise.all([
-        utils.poi.list.invalidate(),
-        utils.poi.stats.invalidate(),
+        rpc.poi.list.invalidate(),
+        rpc.poi.stats.invalidate(),
       ]);
       toast.success(`已删除 ${res.count} 条`);
       setBatchDeleteOpen(false);
@@ -169,8 +170,8 @@ export function PoiClient() {
   const importMut = api.poi.import.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.poi.list.invalidate(),
-        utils.poi.stats.invalidate(),
+        rpc.poi.list.invalidate(),
+        rpc.poi.stats.invalidate(),
       ]);
     },
     onError: (e) => toast.error(e.message),
@@ -338,6 +339,35 @@ export function PoiClient() {
       );
     });
   }
+  /** 导出当前筛选条件下的全部 POI 到 .xlsx */
+  async function handleExport() {
+    try {
+      const items = await rpc.poi.exportAll.fetch({
+        q: committed.q || undefined,
+        regionId: committed.regionId || undefined,
+        status:
+          committed.status === ""
+            ? undefined
+            : (Number(committed.status) as 0 | 1),
+      });
+
+      const rows = items.map((it) => ({
+        "名称": it.name,
+        "类型": it.type ?? "",
+        "别名": it.alias ?? "",
+        "所属区划ID": it.regionId ?? "",
+        "状态": it.status === 1 ? 1 : 0,
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 20 }, { wch: 28 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "POI");
+      XLSX.writeFile(wb, `POI_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success(`已导出 ${rows.length} 条`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   const editingFormInitial = useMemo<PoiDetail | null>(() => {
     if (!editingId) return null;
@@ -407,6 +437,7 @@ export function PoiClient() {
           selectedCount={selected.size}
           onCreate={openCreate}
           onImport={() => setImportOpen(true)}
+          onExport={handleExport}
           onBatchDelete={handleBatchDelete}
         />
       </Reveal>
@@ -472,20 +503,21 @@ export function PoiClient() {
         }
       />
 
-      <CsvImportDialog
+      <ExcelImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
         title="导入 POI"
-        description="支持 CSV(header: name,type,alias,regionId,status)或 JSON 数组。"
+        description="仅支持 Excel(.xlsx/.xls)。可先下载模板填写后导入。"
         fields={[
-          { key: "name", label: "名称", required: true },
-          { key: "type", label: "类型" },
-          { key: "alias", label: "别名" },
-          { key: "regionId", label: "区划 ID" },
-          { key: "status", label: "状态" },
+          { key: "name", label: "名称", required: true, width: 24 },
+          { key: "type", label: "类型", width: 16 },
+          { key: "alias", label: "别名", width: 20 },
+          { key: "regionId", label: "区划 ID", width: 28 },
+          { key: "status", label: "状态", width: 12 },
         ]}
         onSubmit={handleImport}
         isPending={importMut.isPending}
+        fileNamePrefix="POI导入模板"
       />
 
       {/* 单条删除 confirm */}

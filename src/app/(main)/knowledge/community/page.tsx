@@ -1,5 +1,5 @@
-import { CommunityClient } from "@/components/modules/community/community-client";
+import { CommunityPage } from "@/components/modules/community/community-page";
 
 export default function KnowledgeCommunityPage() {
-  return <CommunityClient />;
+  return <CommunityPage />;
 }

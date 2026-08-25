@@ -46,27 +46,27 @@ const emptyForm: FormState = {
 };
 
 export function UsersClient() {
-  const utils = api.useUtils();
+  const rpc = api.useUtils();
   const { data: users, isLoading } = api.user.list.useQuery();
   const { data: roles } = api.role.list.useQuery();
 
   const createUser = api.user.create.useMutation({
     onSuccess: async () => {
-      await utils.user.list.invalidate();
+      await rpc.user.list.invalidate();
       toast.success("用户已创建");
     },
     onError: (e) => toast.error(e.message),
   });
   const updateUser = api.user.update.useMutation({
     onSuccess: async () => {
-      await utils.user.list.invalidate();
+      await rpc.user.list.invalidate();
       toast.success("用户已更新");
     },
     onError: (e) => toast.error(e.message),
   });
   const deleteUser = api.user.delete.useMutation({
     onSuccess: async () => {
-      await utils.user.list.invalidate();
+      await rpc.user.list.invalidate();
       toast.success("用户已删除");
     },
     onError: (e) => toast.error(e.message),

@@ -214,6 +214,52 @@ export const poiRouter = createTRPCRouter({
       return { count: result.count };
     }),
 
+  /** 导出:一次返回全量(前端 Excel 导出用) */
+  exportAll: adminProcedure
+    .input(
+      z.object({
+        q: z.string().trim().optional(),
+        regionId: z.string().optional(),
+        status: statusSchema.optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Prisma.PoiWhereInput = {};
+      if (input.q) {
+        where.OR = [
+          { name: { contains: input.q } },
+          { alias: { contains: input.q } },
+        ];
+      }
+      if (input.regionId) where.regionId = input.regionId;
+      if (input.status !== undefined) where.status = input.status;
+
+      const rows = await ctx.db.poi.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          alias: true,
+          regionId: true,
+          status: true,
+          createdAt: true,
+          region: { select: { name: true } },
+        },
+        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        alias: row.alias,
+        regionId: row.regionId,
+        regionName: row.region?.name ?? null,
+        status: row.status,
+        createdAt: row.createdAt,
+      }));
+    }),
+
   /** 导入(CSV / JSON 数组 -> 逐行 create);失败的行收集进 errors 不影响其它行 */
   import: adminProcedure
     .input(

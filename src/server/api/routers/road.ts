@@ -124,6 +124,37 @@ export const roadRouter = createTRPCRouter({
       return { count: result.count };
     }),
 
+  /** 导出:一次返回全量(前端 Excel 导出用) */
+  exportAll: adminProcedure
+    .input(
+      z.object({
+        q: z.string().trim().optional(),
+        status: statusSchema.optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const where: Prisma.RoadWhereInput = {};
+      if (input.q) where.road = { contains: input.q };
+      if (input.status !== undefined) where.status = input.status;
+
+      const rows = await ctx.db.road.findMany({
+        where,
+        select: {
+          id: true,
+          road: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        road: row.road,
+        status: row.status,
+        createdAt: row.createdAt,
+      }));
+    }),
+
   /** 导入(CSV / JSON 数组 -> 逐行 create);失败的行收集进 errors 不影响其它行 */
   import: adminProcedure
     .input(

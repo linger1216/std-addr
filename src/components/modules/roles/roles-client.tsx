@@ -41,34 +41,34 @@ type FormState = {
 const emptyForm: FormState = { id: null, name: "", code: "", description: "" };
 
 export function RolesClient() {
-  const utils = api.useUtils();
+  const rpc = api.useUtils();
   const { data: roles, isLoading } = api.role.list.useQuery();
   const { data: allMenus } = api.menu.listAll.useQuery();
 
   const createRole = api.role.create.useMutation({
     onSuccess: async () => {
-      await utils.role.list.invalidate();
+      await rpc.role.list.invalidate();
       toast.success("角色已创建");
     },
     onError: (e) => toast.error(e.message),
   });
   const updateRole = api.role.update.useMutation({
     onSuccess: async () => {
-      await utils.role.list.invalidate();
+      await rpc.role.list.invalidate();
       toast.success("角色已更新");
     },
     onError: (e) => toast.error(e.message),
   });
   const deleteRole = api.role.delete.useMutation({
     onSuccess: async () => {
-      await utils.role.list.invalidate();
+      await rpc.role.list.invalidate();
       toast.success("角色已删除");
     },
     onError: (e) => toast.error(e.message),
   });
   const setMenus = api.role.setMenus.useMutation({
     onSuccess: async () => {
-      await utils.role.list.invalidate();
+      await rpc.role.list.invalidate();
       toast.success("授权已保存");
     },
     onError: (e) => toast.error(e.message),

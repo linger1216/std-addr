@@ -13,14 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchSelect } from "@/components/ui/search-select";
 import type { RegionOption } from "@/components/modules/village/village-toolbar";
 
 export type VillageFormValues = {
@@ -158,52 +152,39 @@ export function VillageFormDialog({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="v-region">所属区划</Label>
-              <Select
+              <SearchSelect
                 value={form.regionId}
-                items={[
-                  { value: "", label: "未指定" },
-                  ...regions.map((r) => ({ value: r.id, label: r.name })),
-                ]}
                 onValueChange={(v) =>
                   setForm({
                     ...form,
                     regionId: v ? String(v) : "",
                   })
                 }
-              >
-                <SelectTrigger id="v-region" className="h-9">
-                  <SelectValue placeholder="选择区划" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">未指定</SelectItem>
-                  {regions.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                options={[
+                  { value: "", label: "未指定" },
+                  ...regions.map((r) => ({ value: r.id, label: r.name })),
+                ]}
+                placeholder="选择区划"
+                triggerClassName="h-9 w-full"
+                inputClassName="h-8"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="v-status">状态</Label>
-              <Select
+              <SearchSelect<string>
                 value={String(form.status)}
-                items={[
-                  { value: "1", label: "启用" },
-                  { value: "0", label: "禁用" },
-                ]}
                 onValueChange={(v) =>
                   setForm({ ...form, status: Number(v) as 0 | 1 })
                 }
-              >
-                <SelectTrigger id="v-status" className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">启用</SelectItem>
-                  <SelectItem value="0">禁用</SelectItem>
-                </SelectContent>
-              </Select>
+                options={[
+                  { value: "1", label: "启用" },
+                  { value: "0", label: "禁用" },
+                ]}
+                placeholder="状态"
+                triggerClassName="h-9 w-full"
+                inputClassName="h-8"
+              />
+
             </div>
           </div>
 

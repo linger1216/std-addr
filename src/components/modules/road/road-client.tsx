@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 import {
-  CsvImportDialog,
+  ExcelImportDialog,
   type ImportResult,
   type ImportRow,
-} from "@/components/modules/shared/csv-import";
+} from "@/components/modules/shared/excel-import";
 import { PaginationControl } from "@/components/modules/shared/pagination-control";
 import {
   RoadFormDialog,
@@ -72,7 +73,7 @@ export function RoadClient() {
   const [importOpen, setImportOpen] = useState(false);
 
   // tRPC queries
-  const utils = api.useUtils();
+  const rpc = api.useUtils();
   const listInput = useMemo(
     () => ({
       page,
@@ -99,8 +100,8 @@ export function RoadClient() {
   const createMut = api.road.create.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.road.list.invalidate(),
-        utils.road.stats.invalidate(),
+        rpc.road.list.invalidate(),
+        rpc.road.stats.invalidate(),
       ]);
       toast.success("道路已创建");
       setFormOpen(false);
@@ -111,8 +112,8 @@ export function RoadClient() {
   const updateMut = api.road.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.road.list.invalidate(),
-        utils.road.stats.invalidate(),
+        rpc.road.list.invalidate(),
+        rpc.road.stats.invalidate(),
       ]);
       toast.success("道路已更新");
       setFormOpen(false);
@@ -123,8 +124,8 @@ export function RoadClient() {
   const deleteMut = api.road.delete.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.road.list.invalidate(),
-        utils.road.stats.invalidate(),
+        rpc.road.list.invalidate(),
+        rpc.road.stats.invalidate(),
       ]);
       toast.success("已删除");
       setDeleteRow(null);
@@ -135,8 +136,8 @@ export function RoadClient() {
   const deleteManyMut = api.road.deleteMany.useMutation({
     onSuccess: async (res) => {
       await Promise.all([
-        utils.road.list.invalidate(),
-        utils.road.stats.invalidate(),
+        rpc.road.list.invalidate(),
+        rpc.road.stats.invalidate(),
       ]);
       toast.success(`已删除 ${res.count} 条`);
       setBatchDeleteOpen(false);
@@ -147,8 +148,8 @@ export function RoadClient() {
   const importMut = api.road.import.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.road.list.invalidate(),
-        utils.road.stats.invalidate(),
+        rpc.road.list.invalidate(),
+        rpc.road.stats.invalidate(),
       ]);
     },
     onError: (e) => toast.error(e.message),
@@ -277,6 +278,31 @@ export function RoadClient() {
       );
     });
   }
+  /** 导出当前筛选条件下的全部道路到 .xlsx */
+  async function handleExport() {
+    try {
+      const items = await rpc.road.exportAll.fetch({
+        q: committed.q || undefined,
+        status:
+          committed.status === ""
+            ? undefined
+            : (Number(committed.status) as 0 | 1),
+      });
+
+      const rows = items.map((it) => ({
+        "名称": it.road,
+        "状态": it.status === 1 ? 1 : 0,
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [{ wch: 30 }, { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "道路");
+      XLSX.writeFile(wb, `道路_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success(`已导出 ${rows.length} 条`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   const editingFormInitial = useMemo<RoadDetail | null>(() => {
     if (!editingId) return null;
@@ -323,6 +349,7 @@ export function RoadClient() {
           selectedCount={selected.size}
           onCreate={openCreate}
           onImport={() => setImportOpen(true)}
+          onExport={handleExport}
           onBatchDelete={handleBatchDelete}
         />
       </Reveal>
@@ -371,7 +398,7 @@ export function RoadClient() {
         detail={detail}
       />
 
-      <CsvImportDialog
+      <ExcelImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
         title="导入道路"

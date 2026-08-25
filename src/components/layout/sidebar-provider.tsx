@@ -19,7 +19,7 @@ export function SidebarProvider({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen">
       <Sidebar
         menus={menus}
         collapsed={collapsed}
@@ -28,7 +28,7 @@ export function SidebarProvider({
       <div className="flex min-w-0 flex-1 flex-col">
         <RouteProgress />
         <Topbar username={username} onToggle={() => setCollapsed((c) => !c)} />
-        <main className="flex-1 px-6 pt-6 pb-10">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-6 pb-10">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>

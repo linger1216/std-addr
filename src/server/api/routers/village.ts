@@ -5,8 +5,9 @@ import {
   adminProcedure,
   createTRPCRouter,
 } from "@/server/api/trpc";
+import { communityStatusSchema } from "@/lib/validators/community";
 
-const statusSchema = z.union([z.literal(0), z.literal(1)]);
+const statusSchema = communityStatusSchema;
 
 /** JSON 字段:geom 接收任意可序列化值,服务端不做结构校验 */
 const jsonValueSchema = z
@@ -21,7 +22,7 @@ const jsonValueSchema = z
   .optional();
 
 const villageCreateInput = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().trim().min(1).max(100),
   alias: z.string().max(100).optional(),
   regionId: z.string().cuid().optional(),
   geom: jsonValueSchema,
@@ -30,7 +31,7 @@ const villageCreateInput = z.object({
 
 const villageUpdateInput = z.object({
   id: z.string(),
-  name: z.string().min(1).max(100).optional(),
+  name: z.string().trim().min(1).max(100).optional(),
   alias: z.string().max(100).optional(),
   regionId: z.string().cuid().optional(),
   geom: jsonValueSchema,
@@ -44,39 +45,115 @@ const villageImportRow = z.object({
   status: statusSchema.optional(),
 });
 
+/**
+ * 把业务 JSON → Prisma 可写值。
+ * undefined → 跳过(不写);null → JsonNull(清空);
+ * 其余 → 类型安全的 InputJsonValue(避免 as 强转)。
+ */
+function toPrismaJson(
+  v: unknown,
+): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return Prisma.JsonNull;
+  return v;
+}
+
 type VillageWithRegion = Prisma.VillageGetPayload<{
-  include: { region: { select: { id: true; name: true } } };
+  select: {
+    id: true;
+    name: true;
+    alias: true;
+    regionId: true;
+    status: true;
+    createdAt: true;
+    updatedAt: true;
+    region: { select: { id: true; name: true } };
+  };
 }>;
 
-export const villageRouter = createTRPCRouter({
-  /** 分页 + 搜索 + 状态/区域 筛选 */
-  list: adminProcedure
-    .input(
+/** 可排序列白名单 */
+const villageSortFields = [
+  "name",
+  "alias",
+  "regionName",
+  "status",
+  "createdAt",
+] as const;
+
+const listInput = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(200).default(20),
+  q: z.string().trim().optional(),
+  regionId: z.string().optional(),
+  status: statusSchema.optional(),
+  sort: z
+    .array(
       z.object({
-        page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(200).default(20),
-        q: z.string().trim().optional(),
-        regionId: z.string().optional(),
-        status: statusSchema.optional(),
+        id: z.enum(villageSortFields),
+        desc: z.boolean().default(false),
       }),
     )
-    .query(async ({ ctx, input }) => {
-      const where: Prisma.VillageWhereInput = {};
-      if (input.q) {
-        where.OR = [
-          { name: { contains: input.q } },
-          { alias: { contains: input.q } },
-        ];
+    .max(3)
+    .optional(),
+});
+
+type FilterInput = Pick<z.infer<typeof listInput>, "q" | "regionId" | "status">;
+
+function buildWhere(input: FilterInput): Prisma.VillageWhereInput {
+  const where: Prisma.VillageWhereInput = {};
+  if (input.q) {
+    where.OR = [
+      { name: { contains: input.q } },
+      { alias: { contains: input.q } },
+    ];
+  }
+  if (input.regionId) where.regionId = input.regionId;
+  if (input.status !== undefined) where.status = input.status;
+  return where;
+}
+
+function buildOrderBy(
+  sort: z.infer<typeof listInput>["sort"],
+): Prisma.VillageOrderByWithRelationInput[] {
+  const orderBy: Prisma.VillageOrderByWithRelationInput[] = [];
+  if (sort && sort.length > 0) {
+    for (const s of sort) {
+      const dir = s.desc ? "desc" : "asc";
+      if (s.id === "regionName") {
+        orderBy.push({ region: { name: dir } });
+      } else {
+        orderBy.push({ [s.id]: dir });
       }
-      if (input.regionId) where.regionId = input.regionId;
-      if (input.status !== undefined) where.status = input.status;
+    }
+  } else {
+    orderBy.push({ status: "desc" }, { createdAt: "desc" });
+  }
+  return orderBy;
+}
+
+export const villageRouter = createTRPCRouter({
+  /** 分页 + 搜索 + 状态/区域 筛选 + 排序 */
+  list: adminProcedure
+    .input(listInput)
+    .query(async ({ ctx, input }) => {
+      const where = buildWhere(input);
+      const orderBy = buildOrderBy(input.sort);
 
       const [total, rows] = await Promise.all([
         ctx.db.village.count({ where }),
         ctx.db.village.findMany({
           where,
-          include: { region: { select: { id: true, name: true } } },
-          orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            name: true,
+            alias: true,
+            regionId: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            region: { select: { id: true, name: true } },
+          },
+          orderBy,
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
@@ -107,10 +184,9 @@ export const villageRouter = createTRPCRouter({
       ctx.db.village.count(),
       ctx.db.village.count({ where: { status: 1 } }),
       ctx.db.village.count({ where: { status: 0 } }),
-      ctx.db.village.findMany({
+      ctx.db.village.groupBy({
+        by: ["regionId"],
         where: { regionId: { not: null } },
-        select: { regionId: true },
-        distinct: ["regionId"],
       }),
     ]);
 
@@ -130,13 +206,23 @@ export const villageRouter = createTRPCRouter({
     }),
   ),
 
-  /** 按 id 获取单条(含 region) */
+  /** 按 id 获取单条(含 region);select 瘦身 */
   getById: adminProcedure
     .input(z.object({ id: z.string() }))
     .query(({ ctx, input }) =>
       ctx.db.village.findUnique({
         where: { id: input.id },
-        include: { region: { select: { id: true, name: true } } },
+        select: {
+          id: true,
+          name: true,
+          alias: true,
+          regionId: true,
+          status: true,
+          geom: true,
+          createdAt: true,
+          updatedAt: true,
+          region: { select: { id: true, name: true } },
+        },
       }),
     ),
 
@@ -148,10 +234,7 @@ export const villageRouter = createTRPCRouter({
           name: input.name,
           alias: input.alias ?? null,
           regionId: input.regionId ?? null,
-          geom:
-            input.geom === undefined || input.geom === null
-              ? Prisma.JsonNull
-              : (input.geom as Prisma.InputJsonValue),
+          geom: toPrismaJson(input.geom) ?? Prisma.JsonNull,
           status: input.status,
           createdAt: new Date(),
         },
@@ -165,12 +248,8 @@ export const villageRouter = createTRPCRouter({
       if (input.name !== undefined) data.name = input.name;
       if (input.alias !== undefined) data.alias = input.alias;
       if (input.regionId !== undefined) data.regionId = input.regionId;
-      if (input.geom !== undefined) {
-        data.geom =
-          input.geom === null
-            ? Prisma.JsonNull
-            : (input.geom as Prisma.InputJsonValue);
-      }
+      const geom = toPrismaJson(input.geom);
+      if (geom !== undefined) data.geom = geom;
       if (input.status !== undefined) data.status = input.status;
       return ctx.db.village.update({
         where: { id: input.id },
@@ -194,7 +273,43 @@ export const villageRouter = createTRPCRouter({
       return { count: result.count };
     }),
 
-  /** 导入(CSV / JSON 数组 -> 逐行 create);失败的行收集进 errors 不影响其它行 */
+  /** 导出:一次返回全量(前端 Excel 导出用) */
+  exportAll: adminProcedure
+    .input(
+      z.object({
+        q: z.string().trim().optional(),
+        regionId: z.string().optional(),
+        status: statusSchema.optional(),
+        sort: listInput.shape.sort,
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const where = buildWhere(input);
+      const rows = await ctx.db.village.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          alias: true,
+          regionId: true,
+          status: true,
+          createdAt: true,
+          region: { select: { name: true } },
+        },
+        orderBy: buildOrderBy(input.sort),
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        alias: row.alias,
+        regionId: row.regionId,
+        regionName: row.region?.name ?? null,
+        status: row.status,
+        createdAt: row.createdAt,
+      }));
+    }),
+
+  /** 导入(逐行 create;失败收集进 errors,不影响其它行) */
   import: adminProcedure
     .input(
       z.object({

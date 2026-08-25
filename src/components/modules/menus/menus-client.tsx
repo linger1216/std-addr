@@ -51,26 +51,26 @@ const emptyForm: FormState = {
 };
 
 export function MenusClient() {
-  const utils = api.useUtils();
+  const rpc = api.useUtils();
   const { data: menus, isLoading } = api.menu.listAll.useQuery();
 
   const createMenu = api.menu.create.useMutation({
     onSuccess: async () => {
-      await utils.menu.listAll.invalidate();
+      await rpc.menu.listAll.invalidate();
       toast.success("菜单已创建");
     },
     onError: (e) => toast.error(e.message),
   });
   const updateMenu = api.menu.update.useMutation({
     onSuccess: async () => {
-      await utils.menu.listAll.invalidate();
+      await rpc.menu.listAll.invalidate();
       toast.success("菜单已更新");
     },
     onError: (e) => toast.error(e.message),
   });
   const deleteMenu = api.menu.delete.useMutation({
     onSuccess: async () => {
-      await utils.menu.listAll.invalidate();
+      await rpc.menu.listAll.invalidate();
       toast.success("菜单已删除");
     },
     onError: (e) => toast.error(e.message),
