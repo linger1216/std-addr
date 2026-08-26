@@ -2,21 +2,19 @@
  * useCrudTable —— 统一封装 tanstack table v9 + 分页 + 选中 + 排序。
  *
  * 用法(配合 store 管分页/排序/选中):
- *   const { table, selectedRows, selectedIds, hasSelection } = useCrudTable({
+ *   const { table, selectedIds } = useCrudTable({
  *     data: rows,
  *     columns,
- *     page, pageSize, total,
+ *     pageSize, total,
  *     sorting, rowSelection,
  *     onSortingChange, onRowSelectionChange,
- *     onView, onEdit, onDelete,
  *     getRowId: (r) => r.id,
  *   });
  *
  * 设计要点:
  *   - 列定义由调用方传入(每模块自定义),本 hook 不感知业务
  *   - 分页/排序/选中状态全部外部传入,store/useState 都能配合
- *   - 返回 table 实例 + 派生的 selectedRows(过滤后行)/selectedIds(纯 ID 数组)
- *     /hasSelection(>0 选中),让上层模板直接判断
+ *   - 返回 table 实例 + 派生的 selectedIds(纯 ID 数组,用于批量删除)
  */
 
 "use client";
@@ -43,8 +41,6 @@ export type UseCrudTableOptions<T> = {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   columns: any[];
-  /** 当前页 */
-  page: number;
   /** 每页条数 */
   pageSize: number;
   /** 总记录数(用于分页器展示) */
@@ -57,14 +53,6 @@ export type UseCrudTableOptions<T> = {
   onSortingChange: (next: SortingState | SortingUpdater) => void;
   /** 行选中变化回调 */
   onRowSelectionChange: (next: RowSelectionState | RowSelectionUpdater) => void;
-  /** 特性开关(默认全开) */
-  features?: { rowSelection?: boolean; sorting?: boolean };
-  /** 行级回调(注入到 meta 里供列定义使用) */
-  callbacks?: {
-    onView?: (row: T) => void;
-    onEdit?: (row: T) => void;
-    onDelete?: (row: T) => void;
-  };
 };
 
 export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
@@ -72,25 +60,13 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
     data,
     getRowId,
     columns,
-    page,
     pageSize,
     total,
     sorting,
     rowSelection,
     onSortingChange,
     onRowSelectionChange,
-    features = {},
-    callbacks,
   } = opts;
-
-  const enableRowSelection = features.rowSelection ?? true;
-  const enableSorting = features.sorting ?? true;
-
-  // 把外部回调透传到列 meta(列定义可以 const fn = opts.callbacks?.onView)
-  const columnMeta = useMemo(
-    () => ({ callbacks }),
-    [callbacks],
-  );
 
   const table = useAppTable({
     data: data as never,
@@ -102,8 +78,7 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
     manualSorting: true,
     manualPagination: true,
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
-    enableRowSelection,
-    meta: columnMeta,
+    enableRowSelection: true,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -126,17 +101,7 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
     table: table as any,
-    /** 当前选中的原始行对象数组(用于批量删除时取详情字段) */
-    selectedRows,
     /** 当前选中的行 ID 数组(用于批量删除的 input.ids) */
     selectedIds,
-    /** 是否有选中(短路判断用) */
-    hasSelection: selectedRows.length > 0,
-    /** 当前页(冗余字段,模板可避免 useState + table 之间来回传) */
-    page,
-    /** 每页条数 */
-    pageSize,
-    /** 总记录数 */
-    total,
   };
 }

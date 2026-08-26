@@ -34,7 +34,6 @@ export type CommunityFormValues = {
   regionId: string;
   status: 0 | 1;
   address: string; // JSON 文本
-  geom: string; // JSON 文本
 };
 
 /** JSON 字符串校验:空串 OK,非空必须可解析 */
@@ -59,7 +58,6 @@ const formSchema = z.object({
   regionId: z.string(),
   status: z.union([z.literal(0), z.literal(1)]),
   address: jsonString,
-  geom: jsonString,
 });
 
 type FormSchema = z.infer<typeof formSchema>;
@@ -71,7 +69,6 @@ const EMPTY: FormSchema = {
   regionId: "",
   status: 1,
   address: "",
-  geom: "",
 };
 
 /** 详情 → 表单初值(JSON 字段 stringify 回文本) */
@@ -85,7 +82,6 @@ function toForm(initial: CommunityDetail | CommunityFormValues | null): FormSche
       regionId: initial.regionId ?? "",
       status: initial.status === 0 ? 0 : 1,
       address: initial.address ? JSON.stringify(initial.address, null, 2) : "",
-      geom: initial.geom ? JSON.stringify(initial.geom, null, 2) : "",
     };
   }
   return { ...EMPTY, ...initial };
@@ -100,7 +96,6 @@ function toSubmit(values: FormSchema): CommunityFormValues {
     regionId: values.regionId,
     status: values.status,
     address: values.address,
-    geom: values.geom,
   };
 }
 
@@ -223,20 +218,6 @@ export function CommunityFormDialog({
               aria-invalid={!!errors.address}
               className="min-h-20 font-mono text-[12px]"
               {...register("address")}
-            />
-          </Field>
-
-          <Field
-            label="geom (JSON 字符串)"
-            hint="GeoJSON 格式,留空表示不修改"
-            error={errors.geom?.message}
-          >
-            <Textarea
-              id="c-geom"
-              placeholder='例如:{"type":"Point","coordinates":[116.4,39.9]}'
-              aria-invalid={!!errors.geom}
-              className="min-h-20 font-mono text-[12px]"
-              {...register("geom")}
             />
           </Field>
 

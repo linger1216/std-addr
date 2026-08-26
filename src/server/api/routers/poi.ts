@@ -8,7 +8,7 @@ import {
 
 const statusSchema = z.union([z.literal(0), z.literal(1)]);
 
-/** JSON 字段:address / geom 接收任意可序列化值,服务端不做结构校验 */
+/** JSON 字段:address 接收任意可序列化值,服务端不做结构验证。geom 暂不在 schema 中 */
 const jsonValueSchema = z
   .union([
     z.string(),
@@ -26,7 +26,7 @@ const poiCreateInput = z.object({
   alias: z.string().max(100).optional(),
   regionId: z.string().cuid().optional(),
   address: jsonValueSchema,
-  geom: jsonValueSchema,
+  // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持;暂不在 schema 里
   status: statusSchema.default(1),
 });
 
@@ -37,7 +37,7 @@ const poiUpdateInput = z.object({
   alias: z.string().max(100).optional(),
   regionId: z.string().cuid().optional(),
   address: jsonValueSchema,
-  geom: jsonValueSchema,
+  // geom: 同上
   status: statusSchema.optional(),
 });
 
@@ -161,10 +161,7 @@ export const poiRouter = createTRPCRouter({
             input.address === undefined || input.address === null
               ? Prisma.JsonNull
               : (input.address as Prisma.InputJsonValue),
-          geom:
-            input.geom === undefined || input.geom === null
-              ? Prisma.JsonNull
-              : (input.geom as Prisma.InputJsonValue),
+          // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持写入;暂不写
           status: input.status,
           createdAt: new Date(),
         },
@@ -185,12 +182,7 @@ export const poiRouter = createTRPCRouter({
             ? Prisma.JsonNull
             : (input.address as Prisma.InputJsonValue);
       }
-      if (input.geom !== undefined) {
-        data.geom =
-          input.geom === null
-            ? Prisma.JsonNull
-            : (input.geom as Prisma.InputJsonValue);
-      }
+      // geom: 同上,不在 update 中处理
       if (input.status !== undefined) data.status = input.status;
       return ctx.db.poi.update({
         where: { id: input.id },

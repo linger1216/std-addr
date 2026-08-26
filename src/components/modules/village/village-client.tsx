@@ -232,23 +232,7 @@ export function VillageClient() {
   }
 
   function handleSubmit(values: VillageFormValues) {
-    let geom: unknown;
-    try {
-      geom = parseOptionalJson("geom", values.geom);
-    } catch (err) {
-      toast.error(toErrorMessage(err));
-      return;
-    }
-
-    const geomVal = (geom ?? null) as
-      | string
-      | number
-      | boolean
-      | Record<string, unknown>
-      | unknown[]
-      | null
-      | undefined;
-
+    // geom: 后端 DDL 是 GEOMCOLLECTION,Prisma 暂不支持;不传
     if (values.id) {
       updateMut.mutate({
         id: values.id,
@@ -256,7 +240,6 @@ export function VillageClient() {
         alias: values.alias || undefined,
         regionId: values.regionId || undefined,
         status: values.status,
-        geom: geomVal,
       });
     } else {
       createMut.mutate({
@@ -264,7 +247,6 @@ export function VillageClient() {
         alias: values.alias || undefined,
         regionId: values.regionId || undefined,
         status: values.status,
-        geom: geomVal,
       });
     }
   }

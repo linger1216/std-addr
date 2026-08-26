@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { flexRender } from "@tanstack/react-table";
@@ -41,9 +41,8 @@ type CommunityRowCallbacks = {
  * 行级操作按钮通过 column meta.callbacks 拿到回调。
  */
 export function createCommunityColumns() {
-  const h = columnHelper;
-  return h.columns([
-    h.display({
+  return columnHelper.columns([
+    columnHelper.display({
       id: "select",
       header: ({ table }) => (
         // flex 居中容器,确保 Checkbox 在 text-center cell 里也能水平居中
@@ -81,9 +80,14 @@ export function createCommunityColumns() {
     }),
     columnHelper.accessor("regionName", {
       header: () => <div className="text-center">所属区划</div>,
-      cell: (info) => (
-        <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
-      ),
+      cell: (info) => {
+        const val = orEmpty(info.getValue());
+        return (
+          <div className="flex justify-center">
+            <Badge className="p-2.5" variant="outline">{val}</Badge>
+          </div>
+        );
+      },
     }),
     columnHelper.accessor("address", {
       header: () => <div className="text-center">地址</div>,
@@ -104,7 +108,7 @@ export function createCommunityColumns() {
       ),
       meta: { className: "w-28" },
     }),
-    h.display({
+    columnHelper.display({
       id: "actions",
       header: () => <div className="text-center">操作</div>,
       cell: ({ row, table }) => {
@@ -155,9 +159,13 @@ function AddressCell({ value }: { value: unknown }) {
   return (
     <div className="text-muted-foreground">
       {lines.map((line, i) => (
-        <span key={i} className="block leading-tight">
-          {line}
-        </span>
+        // <span key={i} className="block leading-tight">
+        //   {line}
+        // </span>
+
+        <div key={i} className="flex justify-center">
+          <Badge className="p-2.5" variant="outline">{line}</Badge>
+        </div>
       ))}
     </div>
   );
@@ -207,9 +215,14 @@ export const CommunityTable = memo(function CommunityTable({
   isLoading: boolean;
   callbacks: CommunityRowCallbacks;
 }) {
-  // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取
-  (table.options.meta as { callbacks?: CommunityRowCallbacks }).callbacks =
-    callbacks;
+  // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取。
+  // ponytail: 用 ref 持有同一对象,首次渲染把 meta 注入到 table.options,
+  // 之后只更新 ref.current.callbacks,避免反复调用 setOptions 触发不必要的重渲染。
+  const metaRef = useRef<{ callbacks: CommunityRowCallbacks }>({ callbacks });
+  metaRef.current.callbacks = callbacks;
+  if (!table.options.meta) {
+    table.setOptions((prev) => ({ ...prev, meta: metaRef.current }));
+  }
 
   const headers = table.getHeaderGroups()[0]?.headers;
   const colSpan = headers?.length ?? table.getAllLeafColumns().length;

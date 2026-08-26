@@ -10,21 +10,11 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { formatDateTime, formatJson } from "@/lib/format";
-import { STATUS_LABEL, type StatusValue } from "@/lib/constants";
+import { STATUS_BADGE_CLASS, STATUS_LABEL, type StatusValue } from "@/lib/constants";
+import type { CommunityDetail } from "./community-form";
 
-/** 详情字段 —— 与 form 共享 schema 推导出的"业务模型" */
-type Detail = {
-  id: string;
-  name: string;
-  alias: string | null;
-  regionId: string | null;
-  region?: { id: string; name: string } | null;
-  status: number;
-  address: unknown;
-  geom: unknown;
-  createdAt: Date;
-  updatedAt: Date;
-};
+/** 详情字段 = getById 输出(单一事实来源:community-form.tsx,已含 region) */
+type Detail = CommunityDetail;
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -48,15 +38,13 @@ function JsonBlock({ value }: { value: unknown }) {
   );
 }
 
-/** 状态 badge:复用 STATUS_LABEL/STATUS_BADGE_CLASS(已提取到 lib/constants) */
+/** 状态 badge:复用 STATUS_LABEL/STATUS_BADGE_CLASS(lib/constants) */
 function StatusBadge({ status }: { status: number }) {
   const v: StatusValue = status === 1 ? 1 : 0;
-  const tone =
-    v === 1
-      ? "bg-success-soft text-success-fg"
-      : "bg-danger-soft text-danger-fg";
   return (
-    <Badge className={`border-transparent ${tone}`}>{STATUS_LABEL[v]}</Badge>
+    <Badge className={`border-transparent ${STATUS_BADGE_CLASS[v]}`}>
+      {STATUS_LABEL[v]}
+    </Badge>
   );
 }
 
@@ -89,9 +77,6 @@ export function CommunityDetailDialog({
             <Row label="更新时间">{formatDateTime(detail.updatedAt)}</Row>
             <Row label="地址 (JSON)">
               <JsonBlock value={detail.address} />
-            </Row>
-            <Row label="几何 (JSON)">
-              <JsonBlock value={detail.geom} />
             </Row>
           </div>
         ) : (

@@ -154,9 +154,12 @@ model Community {
     alias     String?
     regionId  String?  @map("region_id")
     address   Json?
-    geom      Json?
+    // DDL 是 GEOMCOLLECTION(MySQL 空间类型),Prisma 没有原生支持;
+    // 用 Unsupported 绕过类型校验,读写通过 raw SQL 处理。
+    // schema 里保留列,避免 Prisma db pull 时报字段缺失。
+    geom      Unsupported("geomcollection")? @map("geom")
     status    Int      @default(1)
-    createdAt DateTime @map("created_at")
+    createdAt DateTime @default(now()) @map("created_at")
     updatedAt DateTime @updatedAt @map("updated_at")
 
     region Region? @relation(fields: [regionId], references: [id])
@@ -171,9 +174,10 @@ model Village {
     name      String
     alias     String?
     regionId  String?  @map("region_id")
-    geom      Json?
+    // DDL 是 GEOMCOLLECTION(MySQL 空间类型),Prisma 不支持 → Unsupported
+    geom      Unsupported("geomcollection")? @map("geom")
     status    Int      @default(1)
-    createdAt DateTime @map("created_at")
+    createdAt DateTime @default(now()) @map("created_at")
     updatedAt DateTime @updatedAt @map("updated_at")
 
     region Region? @relation(fields: [regionId], references: [id])
@@ -201,9 +205,10 @@ model Poi {
     alias     String?
     regionId  String?  @map("region_id")
     address   Json?
-    geom      Json?
+    // DDL 是 GEOMCOLLECTION(MySQL 空间类型),Prisma 不支持 → Unsupported
+    geom      Unsupported("geomcollection")? @map("geom")
     status    Int      @default(1)
-    createdAt DateTime @map("created_at")
+    createdAt DateTime @default(now()) @map("created_at")
     updatedAt DateTime @updatedAt @map("updated_at")
 
     region Region? @relation(fields: [regionId], references: [id])

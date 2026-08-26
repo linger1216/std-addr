@@ -75,12 +75,14 @@ type ProcedureMap = {
   deleteMany: MinimalMutation<any>;
 };
 
-export type UseCrudMutationsOptions<TMessages extends {
+type CrudMessages = {
   createSuccess?: string;
   updateSuccess?: string;
   deleteSuccess?: string;
   deleteManySuccess?: (n: number) => string;
-}> = {
+};
+
+export type UseCrudMutationsOptions = {
   /** tRPC utils(api.useUtils() 返回值) */
   utils: MinimalUtils;
   /** 命名空间列表(如 ["community"]),用于 utils[ns].list.invalidate() + stats.invalidate() */
@@ -88,7 +90,7 @@ export type UseCrudMutationsOptions<TMessages extends {
   /** 4 个 procedure 引用(必填) */
   procedures: ProcedureMap;
   /** 成功提示文案(不传则用默认) */
-  messages?: TMessages;
+  messages?: CrudMessages;
   /** 副作用钩子 —— 通常是关闭 dialog / 清选中 */
   hooks?: {
     onAfterCreate?: () => void;
@@ -126,7 +128,7 @@ async function invalidateAll(utils: MinimalUtils, keys: string[]) {
   );
 }
 
-export function useCrudMutations(opts: UseCrudMutationsOptions<any>) {
+export function useCrudMutations(opts: UseCrudMutationsOptions) {
   const {
     utils,
     invalidateKeys,

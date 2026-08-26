@@ -31,7 +31,6 @@ export type PoiFormValues = {
   regionId: string;
   status: 0 | 1;
   address: string; // JSON 文本,提交时尝试解析
-  geom: string;
 };
 
 export type PoiDetail = {
@@ -42,7 +41,6 @@ export type PoiDetail = {
   regionId: string | null;
   status: number;
   address: unknown;
-  geom: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -55,7 +53,6 @@ const EMPTY: PoiFormValues = {
   regionId: "",
   status: 1,
   address: "",
-  geom: "",
 };
 
 export function PoiFormDialog({
@@ -94,7 +91,6 @@ export function PoiFormDialog({
           regionId: initial.regionId ?? "",
           status: initial.status === 0 ? 0 : 1,
           address: initial.address ? JSON.stringify(initial.address, null, 2) : "",
-          geom: initial.geom ? JSON.stringify(initial.geom, null, 2) : "",
         });
       } else {
         setForm({ ...EMPTY, ...initial });
@@ -121,16 +117,6 @@ export function PoiFormDialog({
         return;
       }
     }
-    if (form.geom.trim()) {
-      try {
-        JSON.parse(form.geom);
-      } catch (err) {
-        setError(
-          `geom 不是合法 JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return;
-      }
-    }
     onSubmit({
       id: form.id,
       name: form.name.trim(),
@@ -139,7 +125,6 @@ export function PoiFormDialog({
       regionId: form.regionId,
       status: form.status,
       address: form.address,
-      geom: form.geom,
     });
   }
 
@@ -244,17 +229,6 @@ export function PoiFormDialog({
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               placeholder='例如:{"province":"北京","city":"北京","district":"朝阳区","street":"XX路"}'
-              className="min-h-20 font-mono text-[12px]"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="p-geom">geom (JSON 字符串)</Label>
-            <Textarea
-              id="p-geom"
-              value={form.geom}
-              onChange={(e) => setForm({ ...form, geom: e.target.value })}
-              placeholder='例如:{"type":"Point","coordinates":[116.4,39.9]}'
               className="min-h-20 font-mono text-[12px]"
             />
           </div>

@@ -10,6 +10,7 @@ import {
   communityStatusSchema,
   communityUpdateSchema,
 } from "@/lib/validators/community";
+import { toErrorMessage } from "@/lib/constants";
 
 /** 状态枚举复用共享 schema */
 const statusSchema = communityStatusSchema;
@@ -149,6 +150,7 @@ export const communityRouter = createTRPCRouter({
         regionId: row.regionId,
         // Prisma JSON 列在 select 里推断成 InputJsonValue | null,与 zod jsonValueSchema 对齐
         address: row.address,
+        // subarea: 列已从 DDL 删除,暂不返回(后续如需加回,补 select + 字段)
         regionName: row.region?.name ?? null,
         status: row.status,
         createdAt: row.createdAt,
@@ -204,7 +206,8 @@ export const communityRouter = createTRPCRouter({
           regionId: true,
           status: true,
           address: true,
-          geom: true,
+          // geom: DDL 是 GEOMCOLLECTION,Prisma 用 Unsupported 类型绕过;
+          // 这里不 select,要拿原始几何数据请走 raw SQL。
           createdAt: true,
           updatedAt: true,
           region: { select: { id: true, name: true } },
@@ -222,7 +225,7 @@ export const communityRouter = createTRPCRouter({
           regionId: input.regionId ?? null,
           // undefined → JsonNull(空 JSON 字段),null → JsonNull,其它 → 值
           address: toPrismaJson(input.address) ?? Prisma.JsonNull,
-          geom: toPrismaJson(input.geom) ?? Prisma.JsonNull,
+          // geom: Unsupported 类型,Prisma 不能直接写,统一 NULL(后续如要写空间数据走 raw SQL)
           status: input.status,
           createdAt: new Date(),
         },
@@ -238,8 +241,7 @@ export const communityRouter = createTRPCRouter({
       if (input.regionId !== undefined) data.regionId = input.regionId;
       const address = toPrismaJson(input.address);
       if (address !== undefined) data.address = address;
-      const geom = toPrismaJson(input.geom);
-      if (geom !== undefined) data.geom = geom;
+      // geom: Unsupported 类型,不支持 update,需要时走 raw SQL
       if (input.status !== undefined) data.status = input.status;
       return ctx.db.community.update({
         where: { id: input.id },
@@ -328,10 +330,7 @@ export const communityRouter = createTRPCRouter({
           });
           created++;
         } catch (err) {
-          errors.push({
-            index: i,
-            message: err instanceof Error ? err.message : String(err),
-          });
+          errors.push({ index: i, message: toErrorMessage(err) });
         }
       }
 

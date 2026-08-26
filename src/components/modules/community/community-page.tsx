@@ -64,22 +64,21 @@ export function CommunityPage() {
   const committed = useCommunityFilters((s) => s.committed);
 
   // —— 2. UI store(分页/排序/选中/dialog)——
-  const ui = useCommunityState();
+  const state = useCommunityState();
   const actions = useCommunityActions();
 
-  // —— 3. tRPC utils + procedures ——
+  // —— 3. tRPC utils ——
   const utils = api.useUtils();
-  const procs = api.community;
 
   // —— 4. mutation 套件(invalidate + toast + 副作用统一)——
   const mut = useCrudMutations({
     utils,
     invalidateKeys: ["community"],
     procedures: {
-      create: procs.create,
-      update: procs.update,
-      delete: procs.delete,
-      deleteMany: procs.deleteMany,
+      create: api.community.create,
+      update: api.community.update,
+      delete: api.community.delete,
+      deleteMany: api.community.deleteMany,
     },
     messages: {
       createSuccess: "小区已创建",
@@ -106,18 +105,18 @@ export function CommunityPage() {
   });
 
   // —— 5. 列表查询 ——
-  const listInput = useMemo(
+  const listQueryParas = useMemo(
     () => ({
-      page: ui.page,
-      pageSize: ui.pageSize,
+      page: state.page,
+      pageSize: state.pageSize,
       q: committed.q ?? undefined,
       regionId: committed.regionId ?? undefined,
       status:
         committed.status === ""
           ? undefined
           : (Number(committed.status) as 0 | 1),
-      sort: ui.sorting.length > 0
-        ? ui.sorting.map((sx) => ({
+      sort: state.sorting.length > 0
+        ? state.sorting.map((sx) => ({
             id: sx.id as
               | "name"
               | "alias"
@@ -128,13 +127,13 @@ export function CommunityPage() {
           }))
         : undefined,
     }),
-    [ui.page, ui.pageSize, ui.sorting, committed],
+    [state.page, state.pageSize, state.sorting, committed],
   );
 
   const { data: listData, isLoading: listLoading } =
-    procs.list.useQuery(listInput);
-  const { data: stats } = procs.stats.useQuery();
-  const { data: regions } = procs.regions.useQuery();
+    api.community.list.useQuery(listQueryParas);
+  const { data: stats } = api.community.stats.useQuery();
+  const { data: regions } = api.community.regions.useQuery();
 
   // 切换筛选 → 回第一页
   useEffect(() => {
@@ -151,11 +150,10 @@ export function CommunityPage() {
     data: rows,
     columns,
     getRowId: (r) => r.id,
-    page: ui.page,
-    pageSize: ui.pageSize,
+    pageSize: state.pageSize,
     total,
-    sorting: ui.sorting,
-    rowSelection: ui.rowSelection,
+    sorting: state.sorting,
+    rowSelection: state.rowSelection,
     onSortingChange: actions.setSorting,
     onRowSelectionChange: actions.setRowSelection,
   });
@@ -166,19 +164,19 @@ export function CommunityPage() {
   );
 
   // —— 7. 编辑/详情 —— 双 useQuery(id 是 detailId / editingId)——
-  const { data: detailData } = procs.getById.useQuery(
-    { id: ui.detailId ?? "" },
-    { enabled: Boolean(ui.detailId) },
+  const { data: detailData } = api.community.getById.useQuery(
+    { id: state.detailId ?? "" },
+    { enabled: Boolean(state.detailId) },
   );
-  const { data: editingData } = procs.getById.useQuery(
-    { id: ui.editingId ?? "" },
-    { enabled: Boolean(ui.editingId) },
+  const { data: editingData } = api.community.getById.useQuery(
+    { id: state.editingId ?? "" },
+    { enabled: Boolean(state.editingId) },
   );
 
   // 编辑请求发出后,等详情加载完成,store 自动打开 form
   useEffect(() => {
-    if (ui.editingId && editingData) actions.openFormWhenReady();
-  }, [ui.editingId, editingData, actions]);
+    if (state.editingId && editingData) actions.openFormWhenReady();
+  }, [state.editingId, editingData, actions]);
 
   // —— 8. 提交表单:create / update ——
   function handleSubmit(values: CommunityFormValues) {
@@ -190,7 +188,6 @@ export function CommunityPage() {
         regionId: values.regionId ?? undefined,
         status: values.status,
         address: parseOptionalJson("address", values.address),
-        geom: parseOptionalJson("geom", values.geom),
       });
     } else {
       mut.create.mutate({
@@ -199,7 +196,6 @@ export function CommunityPage() {
         regionId: values.regionId ?? undefined,
         status: values.status,
         address: parseOptionalJson("address", values.address),
-        geom: parseOptionalJson("geom", values.geom),
       });
     }
   }
@@ -236,7 +232,7 @@ export function CommunityPage() {
             committed.status === ""
               ? undefined
               : (Number(committed.status) as 0 | 1),
-          sort: ui.sorting.map((sx) => ({
+          sort: state.sorting.map((sx) => ({
             id: sx.id as "name" | "alias" | "regionName" | "status" | "createdAt",
             desc: sx.desc,
           })),
@@ -261,7 +257,7 @@ export function CommunityPage() {
 
   // —— 10. 删除确认 ——
   function confirmDelete() {
-    if (ui.deleteRow) mut.remove.mutate({ id: ui.deleteRow.id });
+    if (state.deleteRow) mut.remove.mutate({ id: state.deleteRow.id });
   }
   function confirmBatchDelete() {
     if (selectedIds.length === 0) return;
@@ -270,7 +266,7 @@ export function CommunityPage() {
 
   // —— 11. 派生显示数据 ——
   const editingFormInitial: CommunityDetail | null =
-    ui.editingId && editingData ? editingData : null;
+    state.editingId && editingData ? editingData : null;
   const detail: CommunityDetail | null = detailData ?? null;
   const detailRegion = detail?.regionId
     ? regionOptions.find((r) => r.id === detail.regionId) ?? null
@@ -318,8 +314,8 @@ export function CommunityPage() {
 
       <div className="shrink-0">
         <PaginationControl
-          page={ui.page}
-          pageSize={ui.pageSize}
+          page={state.page}
+          pageSize={state.pageSize}
           total={total}
           onPageChange={actions.setPage}
           onPageSizeChange={actions.setPageSize}
@@ -327,7 +323,7 @@ export function CommunityPage() {
       </div>
 
       <CommunityFormDialog
-        open={ui.formOpen}
+        open={state.formOpen}
         onOpenChange={(v) => {
           if (!v) actions.closeForm();
         }}
@@ -338,7 +334,7 @@ export function CommunityPage() {
       />
 
       <CommunityDetailDialog
-        open={ui.detailOpen}
+        open={state.detailOpen}
         onOpenChange={(v) => {
           if (!v) actions.closeDetail();
         }}
@@ -358,7 +354,7 @@ export function CommunityPage() {
 
       {/* 单条删除 confirm */}
       <Dialog
-        open={Boolean(ui.deleteRow)}
+        open={Boolean(state.deleteRow)}
         onOpenChange={(v) => {
           if (!v) actions.cancelDelete();
         }}
@@ -367,7 +363,7 @@ export function CommunityPage() {
           <DialogHeader>
             <DialogTitle>删除小区</DialogTitle>
             <DialogDescription>
-              {`确定删除小区「${ui.deleteRow?.name ?? ""}」?此操作不可恢复。`}
+              {`确定删除小区「${state.deleteRow?.name ?? ""}」?此操作不可恢复。`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -387,7 +383,7 @@ export function CommunityPage() {
 
       {/* 批量删除 confirm */}
       <Dialog
-        open={ui.batchDeleteOpen}
+        open={state.batchDeleteOpen}
         onOpenChange={(v) => {
           if (!v) actions.cancelBatchDelete();
         }}

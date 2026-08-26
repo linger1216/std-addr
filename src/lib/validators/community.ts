@@ -25,7 +25,7 @@ export const communityCreateSchema = z.object({
   alias: z.string().trim().max(100, "别名最长 100 字").optional(),
   regionId: z.string().cuid("区划 ID 不合法").optional(),
   address: jsonValueSchema,
-  geom: jsonValueSchema,
+  // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持写入;暂不暴露给前端
   status: communityStatusSchema.default(1),
 });
 
@@ -37,7 +37,7 @@ export const communityUpdateSchema = z
     alias: z.string().trim().max(100).optional(),
     regionId: z.string().cuid().optional(),
     address: jsonValueSchema,
-    geom: jsonValueSchema,
+    // geom: 同上,不在 update schema 中
     status: communityStatusSchema.optional(),
   })
   .refine((v) => Object.keys(v).some((k) => k !== "id"), {

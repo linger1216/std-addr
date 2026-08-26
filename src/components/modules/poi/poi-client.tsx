@@ -254,17 +254,15 @@ export function PoiClient() {
 
   function handleSubmit(values: PoiFormValues) {
     let address: unknown;
-    let geom: unknown;
     try {
       address = parseOptionalJson("address", values.address);
-      geom = parseOptionalJson("geom", values.geom);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
       return;
     }
 
     const addr = (address ?? null) as never;
-    const geomVal = (geom ?? null) as never;
+    // geom: 后端 DDL 是 GEOMCOLLECTION,Prisma 暂不支持;不传
 
     if (values.id) {
       updateMut.mutate({
@@ -275,7 +273,6 @@ export function PoiClient() {
         regionId: values.regionId || undefined,
         status: values.status,
         address: addr,
-        geom: geomVal,
       });
     } else {
       createMut.mutate({
@@ -285,7 +282,6 @@ export function PoiClient() {
         regionId: values.regionId || undefined,
         status: values.status,
         address: addr,
-        geom: geomVal,
       });
     }
   }
@@ -380,7 +376,6 @@ export function PoiClient() {
       regionId: editingData.regionId,
       status: editingData.status,
       address: editingData.address,
-      geom: editingData.geom,
       createdAt:
         editingData.createdAt instanceof Date
           ? editingData.createdAt
@@ -402,7 +397,6 @@ export function PoiClient() {
       regionId: detailData.regionId,
       status: detailData.status,
       address: detailData.address,
-      geom: detailData.geom,
       createdAt:
         detailData.createdAt instanceof Date
           ? detailData.createdAt

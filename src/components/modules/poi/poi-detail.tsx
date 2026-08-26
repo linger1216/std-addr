@@ -19,7 +19,6 @@ type Detail = {
   region?: { id: string; name: string } | null;
   status: number;
   address: unknown;
-  geom: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -100,11 +99,6 @@ export function PoiDetailDialog({
             <Row label="地址 (JSON)">
               <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
                 {fmtJson(detail.address)}
-              </pre>
-            </Row>
-            <Row label="几何 (JSON)">
-              <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
-                {fmtJson(detail.geom)}
               </pre>
             </Row>
           </div>

@@ -9,7 +9,7 @@ import { communityStatusSchema } from "@/lib/validators/community";
 
 const statusSchema = communityStatusSchema;
 
-/** JSON 字段:geom 接收任意可序列化值,服务端不做结构校验 */
+/** JSON 字段:geom 暂不在 schema 中(Prisma 不支持 GEOMCOLLECTION 写入) */
 const jsonValueSchema = z
   .union([
     z.string(),
@@ -25,7 +25,7 @@ const villageCreateInput = z.object({
   name: z.string().trim().min(1).max(100),
   alias: z.string().max(100).optional(),
   regionId: z.string().cuid().optional(),
-  geom: jsonValueSchema,
+  // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持;暂不在 schema
   status: statusSchema.default(1),
 });
 
@@ -34,7 +34,7 @@ const villageUpdateInput = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   alias: z.string().max(100).optional(),
   regionId: z.string().cuid().optional(),
-  geom: jsonValueSchema,
+  // geom: 同上
   status: statusSchema.optional(),
 });
 
@@ -49,6 +49,9 @@ const villageImportRow = z.object({
  * 把业务 JSON → Prisma 可写值。
  * undefined → 跳过(不写);null → JsonNull(清空);
  * 其余 → 类型安全的 InputJsonValue(避免 as 强转)。
+ *
+ * 当前没有 JSON 字段在写路径(geom 暂不支持),该函数暂未引用。
+ * 留着作为基础设施,后续如需写 JSON 字段直接调用。
  */
 function toPrismaJson(
   v: unknown,
@@ -218,7 +221,7 @@ export const villageRouter = createTRPCRouter({
           alias: true,
           regionId: true,
           status: true,
-          geom: true,
+          // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持 select;要拿原始几何走 raw SQL
           createdAt: true,
           updatedAt: true,
           region: { select: { id: true, name: true } },
@@ -234,7 +237,7 @@ export const villageRouter = createTRPCRouter({
           name: input.name,
           alias: input.alias ?? null,
           regionId: input.regionId ?? null,
-          geom: toPrismaJson(input.geom) ?? Prisma.JsonNull,
+          // geom: Unsupported 类型,Prisma 不能直接写;需要时走 raw SQL
           status: input.status,
           createdAt: new Date(),
         },
@@ -248,8 +251,7 @@ export const villageRouter = createTRPCRouter({
       if (input.name !== undefined) data.name = input.name;
       if (input.alias !== undefined) data.alias = input.alias;
       if (input.regionId !== undefined) data.regionId = input.regionId;
-      const geom = toPrismaJson(input.geom);
-      if (geom !== undefined) data.geom = geom;
+      // geom: Unsupported 类型,不支持 update,需要时走 raw SQL
       if (input.status !== undefined) data.status = input.status;
       return ctx.db.village.update({
         where: { id: input.id },

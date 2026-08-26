@@ -17,7 +17,6 @@ type Detail = {
   regionId: string | null;
   region?: { id: string; name: string } | null;
   status: number;
-  geom: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -94,11 +93,6 @@ export function VillageDetailDialog({
             </Row>
             <Row label="创建时间">{fmtDate(detail.createdAt)}</Row>
             <Row label="更新时间">{fmtDate(detail.updatedAt)}</Row>
-            <Row label="几何 (JSON)">
-              <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
-                {fmtJson(detail.geom)}
-              </pre>
-            </Row>
           </div>
         ) : (
           <p className="text-[13px] text-muted-foreground">未选择村。</p>

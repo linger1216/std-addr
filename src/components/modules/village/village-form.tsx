@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { SearchSelect } from "@/components/ui/search-select";
 import type { RegionOption } from "@/components/modules/village/village-toolbar";
 
@@ -23,7 +22,6 @@ export type VillageFormValues = {
   alias: string;
   regionId: string;
   status: 0 | 1;
-  geom: string;
 };
 
 export type VillageDetail = {
@@ -32,7 +30,6 @@ export type VillageDetail = {
   alias: string | null;
   regionId: string | null;
   status: number;
-  geom: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -43,7 +40,6 @@ const EMPTY: VillageFormValues = {
   alias: "",
   regionId: "",
   status: 1,
-  geom: "",
 };
 
 export function VillageFormDialog({
@@ -80,7 +76,6 @@ export function VillageFormDialog({
           alias: initial.alias ?? "",
           regionId: initial.regionId ?? "",
           status: initial.status === 0 ? 0 : 1,
-          geom: initial.geom ? JSON.stringify(initial.geom, null, 2) : "",
         });
       } else {
         setForm({ ...EMPTY, ...initial });
@@ -97,23 +92,12 @@ export function VillageFormDialog({
       setError("请输入村名称");
       return;
     }
-    if (form.geom.trim()) {
-      try {
-        JSON.parse(form.geom);
-      } catch (err) {
-        setError(
-          `geom 不是合法 JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return;
-      }
-    }
     onSubmit({
       id: form.id,
       name: form.name.trim(),
       alias: form.alias.trim(),
       regionId: form.regionId,
       status: form.status,
-      geom: form.geom,
     });
   }
 
@@ -184,19 +168,7 @@ export function VillageFormDialog({
                 triggerClassName="h-9 w-full"
                 inputClassName="h-8"
               />
-
             </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="v-geom">geom (JSON 字符串)</Label>
-            <Textarea
-              id="v-geom"
-              value={form.geom}
-              onChange={(e) => setForm({ ...form, geom: e.target.value })}
-              placeholder='例如:{"type":"Polygon","coordinates":[[[116.3,39.8],[116.4,39.8],[116.4,39.9],[116.3,39.9],[116.3,39.8]]]}'
-              className="min-h-20 font-mono text-[12px]"
-            />
           </div>
 
           {error && (
