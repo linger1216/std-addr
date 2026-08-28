@@ -21,29 +21,6 @@ export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * 把任意形态的"地址 JSON"(string / array / object / null)归一化为字符串数组,
- * 给表格按行渲染用。无法归一化的返回空数组(交给调用方决定 fallback 显示什么)。
- *
- * 规则:
- *  - null / undefined    → []
- *  - string              → [string]
- *  - array               → 递归展平每个元素,只保留 string
- *  - number / boolean    → [String(v)]
- *  - object / 其他       → []
- */
-export function normalizeAddress(value: unknown): string[] {
-  if (value == null) return [];
-  if (typeof value === "string") return value ? [value] : [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item) =>
-      typeof item === "string" && item ? [item] : normalizeAddress(item),
-    );
-  }
-  if (typeof value === "number" || typeof value === "boolean") return [String(value)];
-  return [];
-}
-
 // ─── 业务层:通用状态 ───────────────────────────────────
 
 export const STATUS = {

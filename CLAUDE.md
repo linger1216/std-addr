@@ -20,7 +20,7 @@
 | 数据 | Prisma + MySQL (MariaDB),schema 在 `prisma/schema.prisma`,生成的 client 在 `generated/` |
 | 表状态 | TanStack Table v9 (用 `createTableHook` 封装成 `lib/table.ts`) |
 | 表单 | react-hook-form + zodResolver + zod |
-| 状态 | zustand (模块私有 store 用 `createCrudFiltersStore` 工厂) |
+| 状态 | zustand (模块私有 store 用 `createQueryParamsStore` 工厂) |
 | 序列化 | SuperJSON + 自研 envelope 包装 |
 | 样式 | Tailwind CSS + shadcn 风格组件 |
 | 包管理 | pnpm (workspace 单包) |
@@ -55,7 +55,7 @@ src/
 │   ├── auth/                     # NextAuth 配置
 │   └── db.ts                     # Prisma client 单例
 ├── store/                        # 全局 zustand stores
-│   └── use-crud-filters.ts       # createCrudFiltersStore 工厂
+│   └── use-query-params.ts       # createQueryParamsStore 工厂
 └── trpc/                         # tRPC 客户端 provider
     ├── react.tsx
     ├── server.ts
@@ -108,7 +108,7 @@ onError: (e) => toast.error(toApiError(e).message),
 ├── <module>-toolbar.tsx     # 筛选 + 操作按钮
 ├── <module>-stats.tsx       # 顶部指标卡
 ├── stores/<module>-store.ts # UI 态(分页/排序/选中/dialog open)
-└── use-<module>-filters.ts  # createCrudFiltersStore 实例
+└── use-<module>-query-params.ts  # createQueryParamsStore 实例
 ```
 
 ### 4.5 通用 CRUD hooks(必用)
@@ -118,7 +118,7 @@ onError: (e) => toast.error(toApiError(e).message),
 | `useCrudTable` | tanstack table + 分页/排序/选中/行回调统一 |
 | `useCrudExcel` | 导出 + 导入 dialog 调度(自动 toast) |
 | `useCrudMutations` | create/update/delete/deleteMany 自动 invalidate + toast + 副作用 |
-| `useCrudFilters` (工厂) | draft/committed 双态筛选,Enter 触发 commit |
+| `createQueryParamsStore` (工厂) | draft/committed 双态查询参数,Enter 触发 commit |
 
 **不要**在这套 hook 上加更多层抽象 —— 4 个就够,过度封装反而更难维护。
 
@@ -152,11 +152,11 @@ fixed 浮层 + Portal 到 body 时,**滚动时重新定位**(调 `trigger.getBou
 
 ## 6. 状态管理约定
 
-### 模块私有 store(用 createCrudFiltersStore 工厂)
+### 模块私有 store(用 createQueryParamsStore 工厂)
 
 ```ts
-// src/store/use-crud-filters.ts 已有
-export const useCommunityFilters = createCrudFiltersStore(EMPTY_COMMUNITY_FILTERS);
+// src/store/use-query-params.ts 已有
+export const useCommunityQueryParams = createQueryParamsStore(EMPTY_COMMUNITY_QUERY_PARAMS);
 ```
 
 UI 态(分页/排序/选中/dialog open)放在模块私有 zustand store,**用 useShallow 拆分 selectors**,避免 27 字段全订阅导致渲染抖动。
@@ -214,6 +214,7 @@ node_modules/.bin/next lint --quiet --dir <本次修改的目录>
 | --- | --- |
 | `docs/adr/0001-trpc-api-envelope.md` | envelope 化完整 ADR(背景/设计/迁移/回滚) |
 | `docs/conventions/api-response-envelope.md` | envelope 简版约定 |
+| `docs/knowledge/` | 项目书 · 各知识点章节(状态管理、tRPC 链路、表格封装……持续补全) |
 | `docs/css/css.md` | 样式约定(若存在) |
 
 `design/` 目录在 `.gitignore` 内,只用于本地重构方案草稿,不进 commit。

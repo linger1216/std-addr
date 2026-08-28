@@ -20,7 +20,7 @@ import { RoadDetailDialog } from "@/components/modules/road/road-detail";
 import { RoadStats } from "@/components/modules/road/road-stats";
 import { RoadTable, type RoadRow } from "@/components/modules/road/road-table";
 import { RoadToolbar } from "@/components/modules/road/road-toolbar";
-import { useRoadFilters } from "@/components/modules/road/use-road-filters";
+import { useRoadQueryParams } from "@/components/modules/road/use-road-query-params";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -51,8 +51,8 @@ export function RoadClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // ponytail: 筛选 state 由 useRoadFilters(zustand) 管理
-  const committed = useRoadFilters((s) => s.committed);
+  // ponytail: 查询参数 state 由 useRoadQueryParams(zustand) 管理
+  const committed = useRoadQueryParams((s) => s.committed);
 
   // 选中
   const [selected, setSelected] = useState<Set<string>>(new Set());

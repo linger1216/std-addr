@@ -15,7 +15,7 @@ import {
 import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
-import { useCommunityFilters } from "./use-community-filters";
+import { useCommunityQueryParams } from "./use-community-query-params";
 
 export type RegionOption = { id: string; name: string };
 
@@ -34,10 +34,10 @@ export function CommunityToolbar({
   onExport: () => void;
   onBatchDelete: () => void;
 }) {
-  const draft = useCommunityFilters((s) => s.draft);
-  const patchDraft = useCommunityFilters((s) => s.patchDraft);
-  const commit = useCommunityFilters((s) => s.commit);
-  const reset = useCommunityFilters((s) => s.reset);
+  const draft = useCommunityQueryParams((s) => s.draft);
+  const patchDraft = useCommunityQueryParams((s) => s.patchDraft);
+  const commit = useCommunityQueryParams((s) => s.commit);
+  const reset = useCommunityQueryParams((s) => s.reset);
 
   return (
     <div className="space-y-3">

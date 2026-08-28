@@ -14,7 +14,7 @@ import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 
-import { useVillageFilters } from "./use-village-filters";
+import { useVillageQueryParams } from "./use-village-query-params";
 
 export type RegionOption = { id: string; name: string };
 
@@ -33,11 +33,11 @@ export function VillageToolbar({
   onExport: () => void;
   onBatchDelete: () => void;
 }) {
-  // ponytail: 筛选 state 由 useVillageFilters(zustand) 管理
-  const draft = useVillageFilters((s) => s.draft);
-  const patchDraft = useVillageFilters((s) => s.patchDraft);
-  const commit = useVillageFilters((s) => s.commit);
-  const reset = useVillageFilters((s) => s.reset);
+  // ponytail: 查询参数 state 由 useVillageQueryParams(zustand) 管理
+  const draft = useVillageQueryParams((s) => s.draft);
+  const patchDraft = useVillageQueryParams((s) => s.patchDraft);
+  const commit = useVillageQueryParams((s) => s.commit);
+  const reset = useVillageQueryParams((s) => s.reset);
 
   return (
     <div className="space-y-3">

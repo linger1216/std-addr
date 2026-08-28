@@ -5,6 +5,7 @@
  *   - formatDateTime: Date | string | null | undefined → zh-CN 本地化字符串
  *   - formatShortDate: Date | string | null | undefined → YYYY-MM-DD
  *   - formatJson: unknown → 格式化 JSON 文本,不可序列化时降级
+ *   - normalizeAddress: unknown → 字符串数组(地址 JSON 字段归一)
  *   - orEmpty: null | undefined → PLACEHOLDER_EMPTY
  */
 
@@ -52,4 +53,27 @@ export function formatJson(v: unknown): string {
   } catch {
     return Object.prototype.toString.call(v);
   }
+}
+
+/**
+ * 把任意形态的"地址 JSON"(string / array / object / null)归一化为字符串数组,
+ * 给表格按行渲染用。无法归一化的返回空数组(交给调用方决定 fallback 显示什么)。
+ *
+ * 规则:
+ *  - null / undefined    → []
+ *  - string              → [string]
+ *  - array               → 递归展平每个元素,只保留 string
+ *  - number / boolean    → [String(v)]
+ *  - object / 其他       → []
+ */
+export function normalizeAddress(value: unknown): string[] {
+  if (value == null) return [];
+  if (typeof value === "string") return value ? [value] : [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) =>
+      typeof item === "string" && item ? [item] : normalizeAddress(item),
+    );
+  }
+  if (typeof value === "number" || typeof value === "boolean") return [String(value)];
+  return [];
 }

@@ -14,7 +14,7 @@ import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 
-import { usePoiFilters } from "./use-poi-filters";
+import { usePoiQueryParams } from "./use-poi-query-params";
 
 export type RegionOption = { id: string; name: string };
 
@@ -33,10 +33,10 @@ export function PoiToolbar({
   onExport: () => void;
   onBatchDelete: () => void;
 }) {
-  const draft = usePoiFilters((s) => s.draft);
-  const patchDraft = usePoiFilters((s) => s.patchDraft);
-  const commit = usePoiFilters((s) => s.commit);
-  const reset = usePoiFilters((s) => s.reset);
+  const draft = usePoiQueryParams((s) => s.draft);
+  const patchDraft = usePoiQueryParams((s) => s.patchDraft);
+  const commit = usePoiQueryParams((s) => s.commit);
+  const reset = usePoiQueryParams((s) => s.reset);
 
   return (
     <div className="space-y-3">

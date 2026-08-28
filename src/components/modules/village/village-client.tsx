@@ -28,7 +28,7 @@ import {
   type RegionOption,
   VillageToolbar,
 } from "@/components/modules/village/village-toolbar";
-import { useVillageFilters } from "@/components/modules/village/use-village-filters";
+import { useVillageQueryParams } from "@/components/modules/village/use-village-query-params";
 import { useAppTable } from "@/lib/table";
 import { toErrorMessage } from "@/lib/constants";
 import { Button, MotionButton } from "@/components/ui/button";
@@ -59,7 +59,7 @@ export function VillageClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const committed = useVillageFilters((s) => s.committed);
+  const committed = useVillageQueryParams((s) => s.committed);
 
   // 选中:交给 TanStack rowSelection
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});

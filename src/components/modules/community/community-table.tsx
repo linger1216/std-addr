@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -19,8 +20,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { type useAppTable, createAppColumnHelper } from "@/lib/table";
-import { STATUS, STATUS_BADGE_CLASS, STATUS_LABEL, normalizeAddress, orEmpty } from "@/lib/constants";
-import { formatShortDate } from "@/lib/format";
+import { orEmpty } from "@/lib/constants";
+import { formatShortDate, normalizeAddress } from "@/lib/format";
 import type { RouterOutputs } from "@/trpc/react";
 
 /** 表格行 = list procedure 的 item 类型(单一事实来源) */
@@ -159,25 +160,11 @@ function AddressCell({ value }: { value: unknown }) {
   return (
     <div className="text-muted-foreground">
       {lines.map((line, i) => (
-        // <span key={i} className="block leading-tight">
-        //   {line}
-        // </span>
-
         <div key={i} className="flex justify-center">
-          <Badge className="p-2.5" variant="outline">{line}</Badge>
+          <Badge className="p-2.5 mt-1" variant="outline">{line}</Badge>
         </div>
       ))}
     </div>
-  );
-}
-
-/** 状态 badge:复用 STATUS_BADGE_CLASS / STATUS_LABEL */
-function StatusBadge({ status }: { status: number }) {
-  const v: 0 | 1 = status === STATUS.ENABLED ? STATUS.ENABLED : STATUS.DISABLED;
-  return (
-    <Badge className={cn("border-transparent", STATUS_BADGE_CLASS[v])}>
-      {STATUS_LABEL[v]}
-    </Badge>
   );
 }
 

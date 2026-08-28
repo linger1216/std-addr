@@ -35,7 +35,7 @@ import { Reveal } from "@/components/ui/reveal";
 import { PaginationControl } from "@/components/modules/shared/pagination-control";
 
 import { useCommunityState, useCommunityActions } from "./stores/community-store";
-import { useCommunityFilters } from "./use-community-filters";
+import { useCommunityQueryParams } from "./use-community-query-params";
 import { useCrudExcel } from "@/lib/crud/use-crud-excel";
 import { useCrudMutations } from "@/lib/crud/use-crud-mutations";
 import { useCrudTable } from "@/lib/crud/use-crud-table";
@@ -47,7 +47,7 @@ import { api } from "@/trpc/react";
  * 小区页顶层编排。
  *
  * 数据流:
- *   useCommunityFilters (store) → submitted filters
+ *   useCommunityQueryParams (store) → submitted query params
  *     ↓
  *   tRPC useQuery (list / stats / regions / getById)
  *     ↓
@@ -60,8 +60,8 @@ import { api } from "@/trpc/react";
  *     ↓ invalidate list+stats → useQuery 自动重拉
  */
 export function CommunityPage() {
-  // —— 1. 筛选 store(搜索/区划/状态)——
-  const committed = useCommunityFilters((s) => s.committed);
+  // —— 1. 查询参数 store(搜索/区划/状态)——
+  const filters = useCommunityQueryParams((s) => s.committed);
 
   // —— 2. UI store(分页/排序/选中/dialog)——
   const state = useCommunityState();
@@ -109,12 +109,12 @@ export function CommunityPage() {
     () => ({
       page: state.page,
       pageSize: state.pageSize,
-      q: committed.q ?? undefined,
-      regionId: committed.regionId ?? undefined,
+      q: filters.q ?? undefined,
+      regionId: filters.regionId ?? undefined,
       status:
-        committed.status === ""
+        filters.status === ""
           ? undefined
-          : (Number(committed.status) as 0 | 1),
+          : (Number(filters.status) as 0 | 1),
       sort: state.sorting.length > 0
         ? state.sorting.map((sx) => ({
             id: sx.id as
@@ -127,7 +127,7 @@ export function CommunityPage() {
           }))
         : undefined,
     }),
-    [state.page, state.pageSize, state.sorting, committed],
+    [state.page, state.pageSize, state.sorting, filters],
   );
 
   const { data: listData, isLoading: listLoading } =
@@ -138,7 +138,7 @@ export function CommunityPage() {
   // 切换筛选 → 回第一页
   useEffect(() => {
     actions.setPage(1);
-  }, [committed.q, committed.regionId, committed.status, actions]);
+  }, [filters.q, filters.regionId, filters.status, actions]);
 
   // —— 6. table 实例(选中/分页/排序统一)——
   const rows: CommunityRow[] = listData?.items ?? [];
@@ -226,12 +226,12 @@ export function CommunityPage() {
     fetchAll: () =>
       utils.community.exportAll
         .fetch({
-          q: committed.q ?? undefined,
-          regionId: committed.regionId ?? undefined,
+          q: filters.q ?? undefined,
+          regionId: filters.regionId ?? undefined,
           status:
-            committed.status === ""
+            filters.status === ""
               ? undefined
-              : (Number(committed.status) as 0 | 1),
+              : (Number(filters.status) as 0 | 1),
           sort: state.sorting.map((sx) => ({
             id: sx.id as "name" | "alias" | "regionName" | "status" | "createdAt",
             desc: sx.desc,

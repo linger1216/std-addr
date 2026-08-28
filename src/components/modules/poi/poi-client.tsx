@@ -23,7 +23,7 @@ import {
   type RegionOption,
   PoiToolbar,
 } from "@/components/modules/poi/poi-toolbar";
-import { usePoiFilters } from "@/components/modules/poi/use-poi-filters";
+import { usePoiQueryParams } from "@/components/modules/poi/use-poi-query-params";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -65,8 +65,8 @@ export function PoiClient() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // ponytail: 筛选 state 由 usePoiFilters(zustand) 管理
-  const committed = usePoiFilters((s) => s.committed);
+  // ponytail: 查询参数 state 由 usePoiQueryParams(zustand) 管理
+  const committed = usePoiQueryParams((s) => s.committed);
 
   // 选中
   const [selected, setSelected] = useState<Set<string>>(new Set());

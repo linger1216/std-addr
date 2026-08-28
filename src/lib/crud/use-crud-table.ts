@@ -81,10 +81,9 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
     enableRowSelection: true,
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const selectedRows = useMemo(
     () => table.getSelectedRowModel().rows.map((r) => r.original) as T[],
-    [table, rowSelection],
+    [table],
   );
 
   const selectedIds = useMemo(

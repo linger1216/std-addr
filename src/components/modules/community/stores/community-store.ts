@@ -2,7 +2,7 @@
  * 小区页 UI 状态 store —— 模块私有。
  *
  * 拆分:
- *   - 筛选(搜索/区划/状态):useCommunityFilters(createCrudFiltersStore,与 road/poi/village 一致)
+ *   - 查询参数(搜索/区划/状态):useCommunityQueryParams(createQueryParamsStore,与 road/poi/village 一致)
  *   - UI 态(分页/排序/选中/dialog open):本 store,纯展示状态
  *   - 排序 id 白名单:见 CommunitySortId
  *
@@ -134,6 +134,8 @@ type UiSlice = Pick<
   | "importOpen"
 >;
 
+// 对比对象的**每一层直接属性**，属性值不变，就判定相等，不触发重渲染。
+// 如果不用, 则属性相同, 但引用对象变了, 也会造成重绘, 影响性能.
 export function useCommunityState(): UiSlice {
   return useCommunityStore(
     useShallow((s) => ({

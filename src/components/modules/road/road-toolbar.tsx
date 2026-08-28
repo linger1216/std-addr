@@ -14,7 +14,7 @@ import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 
-import { useRoadFilters } from "./use-road-filters";
+import { useRoadQueryParams } from "./use-road-query-params";
 
 export function RoadToolbar({
   selectedCount,
@@ -29,11 +29,11 @@ export function RoadToolbar({
   onExport: () => void;
   onBatchDelete: () => void;
 }) {
-  // ponytail: 筛选 state 由 useRoadFilters(zustand) 管理
-  const draft = useRoadFilters((s) => s.draft);
-  const patchDraft = useRoadFilters((s) => s.patchDraft);
-  const commit = useRoadFilters((s) => s.commit);
-  const reset = useRoadFilters((s) => s.reset);
+  // ponytail: 查询参数 state 由 useRoadQueryParams(zustand) 管理
+  const draft = useRoadQueryParams((s) => s.draft);
+  const patchDraft = useRoadQueryParams((s) => s.patchDraft);
+  const commit = useRoadQueryParams((s) => s.commit);
+  const reset = useRoadQueryParams((s) => s.reset);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">

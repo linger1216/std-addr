@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { JsonBlock } from "@/components/ui/json-block";
 import { Label } from "@/components/ui/label";
-import { formatDateTime, formatJson } from "@/lib/format";
-import { STATUS_BADGE_CLASS, STATUS_LABEL, type StatusValue } from "@/lib/constants";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { formatDateTime } from "@/lib/format";
 import type { CommunityDetail } from "./community-form";
 
 /** 详情字段 = getById 输出(单一事实来源:community-form.tsx,已含 region) */
@@ -22,29 +22,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <Label className="text-[12px] font-normal text-muted-foreground">
         {label}
       </Label>
-      <div className="min-w-0 break-words text-[13px] text-foreground">
+      <div className="min-w-0 wrap-break-words text-[13px] text-foreground">
         {children}
       </div>
     </div>
-  );
-}
-
-/** JSON 字段的统一渲染容器 */
-function JsonBlock({ value }: { value: unknown }) {
-  return (
-    <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
-      {formatJson(value)}
-    </pre>
-  );
-}
-
-/** 状态 badge:复用 STATUS_LABEL/STATUS_BADGE_CLASS(lib/constants) */
-function StatusBadge({ status }: { status: number }) {
-  const v: StatusValue = status === 1 ? 1 : 0;
-  return (
-    <Badge className={`border-transparent ${STATUS_BADGE_CLASS[v]}`}>
-      {STATUS_LABEL[v]}
-    </Badge>
   );
 }
 
