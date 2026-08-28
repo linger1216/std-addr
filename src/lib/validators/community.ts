@@ -7,6 +7,18 @@ import { z } from "zod";
 
 export const communityStatusSchema = z.union([z.literal(0), z.literal(1)]);
 
+/**
+ * 区划 ID:region.id 沿袭外部系统,不是 cuid 格式,只做基本字符串校验。
+ * 空串 = "未指定"(前端 SearchSelect 的默认选项),由路由层归一为 null;
+ * undefined = 未传(不处理)。
+ */
+export const optionalRegionIdSchema = z
+  .union([
+    z.string().trim().min(1, "区划 ID 不能为空").max(100, "区划 ID 最长 100 字"),
+    z.literal(""),
+  ])
+  .optional();
+
 /** JSON 字段:address / geom 接收任意可序列化值 */
 export const jsonValueSchema = z
   .union([
@@ -19,11 +31,19 @@ export const jsonValueSchema = z
   ])
   .optional();
 
+/**
+ * alias 接收多种形态:字符串(单值)、字符串数组(多值)、JSON 字符串。
+ * router 内部用 parseAliasEntries 归一,落库为字符串数组或 NULL。
+ */
+export const aliasInputSchema = z
+  .union([z.string(), z.array(z.string().trim().min(1).max(100))])
+  .optional();
+
 /** 新建 */
 export const communityCreateSchema = z.object({
   name: z.string().trim().min(1, "名称不能为空").max(100, "名称最长 100 字"),
-  alias: z.string().trim().max(100, "别名最长 100 字").optional(),
-  regionId: z.string().cuid("区划 ID 不合法").optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
   address: jsonValueSchema,
   // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持写入;暂不暴露给前端
   status: communityStatusSchema.default(1),
@@ -34,8 +54,8 @@ export const communityUpdateSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().trim().min(1, "名称不能为空").max(100).optional(),
-    alias: z.string().trim().max(100).optional(),
-    regionId: z.string().cuid().optional(),
+    alias: aliasInputSchema,
+    regionId: optionalRegionIdSchema,
     address: jsonValueSchema,
     // geom: 同上,不在 update schema 中
     status: communityStatusSchema.optional(),

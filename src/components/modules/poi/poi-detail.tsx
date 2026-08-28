@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -9,19 +8,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
+import { formatDateTime, parseAddressEntries } from "@/lib/format";
+import { parseAliasEntries } from "@/lib/alias-entries";
+import type { PoiDetail } from "./poi-form";
 
-type Detail = {
-  id: string;
-  name: string;
-  type: string | null;
-  alias: string | null;
-  regionId: string | null;
-  region?: { id: string; name: string } | null;
-  status: number;
-  address: unknown;
-  createdAt: Date;
-  updatedAt: Date;
-};
+/** 详情字段 = getById 输出(单一事实来源:poi-form.tsx,已含 region) */
+type Detail = PoiDetail;
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -29,35 +23,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <Label className="text-[12px] font-normal text-muted-foreground">
         {label}
       </Label>
-      <div className="min-w-0 break-words text-[13px] text-foreground">
+      <div className="min-w-0 wrap-break-words text-[13px] text-foreground">
         {children}
       </div>
     </div>
   );
-}
-
-function fmtDate(d: Date | string): string {
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return String(d);
-  return date.toLocaleString("zh-CN", { hour12: false });
-}
-
-function fmtJson(v: unknown): string {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "string") {
-    const s = v.trim();
-    if (!s) return "—";
-    try {
-      return JSON.stringify(JSON.parse(s), null, 2);
-    } catch {
-      return s;
-    }
-  }
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return Object.prototype.toString.call(v);
-  }
 }
 
 export function PoiDetailDialog({
@@ -80,32 +50,63 @@ export function PoiDetailDialog({
         {detail ? (
           <div className="divide-y divide-border/60">
             <Row label="名称">{detail.name}</Row>
-            <Row label="类型">{detail.type ?? "—"}</Row>
-            <Row label="别名">{detail.alias ?? "—"}</Row>
-            <Row label="所属区划">{detail.region?.name ?? "—"}</Row>
+            <Row label="类型">{orEmpty(detail.type)}</Row>
+            <Row label="别名">
+              {/* alias 是 JSON 数组,不展示原始格式:解析后按 1-N 条渲染 */}
+              <AliasEntries value={detail.alias} />
+            </Row>
+            <Row label="所属区划">{orEmpty(detail.region?.name)}</Row>
             <Row label="状态">
-              {detail.status === 1 ? (
-                <Badge className="border-transparent bg-success-soft text-success-fg">
-                  启用
-                </Badge>
-              ) : (
-                <Badge className="border-transparent bg-danger-soft text-danger-fg">
-                  禁用
-                </Badge>
-              )}
+              <StatusBadge status={detail.status} />
             </Row>
-            <Row label="创建时间">{fmtDate(detail.createdAt)}</Row>
-            <Row label="更新时间">{fmtDate(detail.updatedAt)}</Row>
-            <Row label="地址 (JSON)">
-              <pre className="max-h-32 overflow-auto rounded-lg bg-secondary/60 p-2 font-mono text-[11.5px] leading-relaxed">
-                {fmtJson(detail.address)}
-              </pre>
+            <Row label="地址">
+              {/* address 是 JSON 数组,不展示原始格式:解析后按 1-N 条渲染 */}
+              <AddressEntries value={detail.address} />
             </Row>
+            {/* 创建/更新时间约定放字段最后,见 CLAUDE.md §7 */}
+            <Row label="创建时间">{formatDateTime(detail.createdAt)}</Row>
+            <Row label="更新时间">{formatDateTime(detail.updatedAt)}</Row>
           </div>
         ) : (
           <p className="text-[13px] text-muted-foreground">未选择 POI。</p>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 别名条目:解析 JSON 后逐条展示;无内容显示空值占位符 */
+function AliasEntries({ value }: { value: unknown }) {
+  const lines = parseAliasEntries(value);
+  if (lines.length === 0) {
+    return <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
+  }
+  return (
+    <ul className="space-y-1">
+      {lines.map((line, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <span className="mt-px shrink-0 text-muted-foreground">{i + 1}.</span>
+          <span>{line}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** 地址条目:解析 JSON 后逐条展示;无内容显示空值占位符 */
+function AddressEntries({ value }: { value: unknown }) {
+  const lines = parseAddressEntries(value);
+  if (lines.length === 0) {
+    return <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
+  }
+  return (
+    <ul className="space-y-1">
+      {lines.map((line, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <span className="mt-px shrink-0 text-muted-foreground">{i + 1}.</span>
+          <span>{line}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

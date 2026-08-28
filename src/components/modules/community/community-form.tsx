@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,88 +16,26 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { SearchSelect } from "@/components/ui/search-select";
+import { AliasTagInput } from "@/components/modules/shared/alias-tag-input";
 import type { RegionOption } from "./community-toolbar";
 import type { RouterOutputs } from "@/trpc/react";
+// 表单的纯数据映射(toForm/toSubmit/schema)独立成模块,便于单元测试
+import {
+  formSchema,
+  toForm,
+  toSubmit,
+  type CommunityFormValues,
+  type FormSchema,
+} from "./community-form-mappers";
 
 /** 详情类型 = getById 输出(单一事实来源) */
 export type CommunityDetail = NonNullable<
   RouterOutputs["community"]["getById"]
 >;
 
-/** 表单值(字符串形态,提交时再解析 JSON) */
-export type CommunityFormValues = {
-  id: string | null;
-  name: string;
-  alias: string;
-  regionId: string;
-  status: 0 | 1;
-  address: string; // JSON 文本
-};
-
-/** JSON 字符串校验:空串 OK,非空必须可解析 */
-const jsonString = z
-  .string()
-  .refine(
-    (v) => !v.trim() || (() => {
-      try {
-        JSON.parse(v);
-        return true;
-      } catch {
-        return false;
-      }
-    })(),
-    { message: "不是合法 JSON" },
-  );
-
-const formSchema = z.object({
-  id: z.string().nullable(),
-  name: z.string().trim().min(1, "请输入小区名称").max(100, "名称最长 100 字"),
-  alias: z.string().trim().max(100, "别名最长 100 字"),
-  regionId: z.string(),
-  status: z.union([z.literal(0), z.literal(1)]),
-  address: jsonString,
-});
-
-type FormSchema = z.infer<typeof formSchema>;
-
-const EMPTY: FormSchema = {
-  id: null,
-  name: "",
-  alias: "",
-  regionId: "",
-  status: 1,
-  address: "",
-};
-
-/** 详情 → 表单初值(JSON 字段 stringify 回文本) */
-function toForm(initial: CommunityDetail | CommunityFormValues | null): FormSchema {
-  if (!initial) return EMPTY;
-  if ("createdAt" in initial) {
-    return {
-      id: initial.id,
-      name: initial.name,
-      alias: initial.alias ?? "",
-      regionId: initial.regionId ?? "",
-      status: initial.status === 0 ? 0 : 1,
-      address: initial.address ? JSON.stringify(initial.address, null, 2) : "",
-    };
-  }
-  return { ...EMPTY, ...initial };
-}
-
-/** 表单 → 提交值(去掉 trim + 转换 id) */
-function toSubmit(values: FormSchema): CommunityFormValues {
-  return {
-    id: values.id,
-    name: values.name.trim(),
-    alias: values.alias.trim(),
-    regionId: values.regionId,
-    status: values.status,
-    address: values.address,
-  };
-}
+/** 提交值类型定义在 mappers 模块(与 toForm/toSubmit 同源) */
+export type { CommunityFormValues } from "./community-form-mappers";
 
 export function CommunityFormDialog({
   open,
@@ -122,7 +60,13 @@ export function CommunityFormDialog({
     formState: { errors },
   } = useForm<FormSchema>({
     resolver: zodResolver(formSchema),
-    defaultValues: EMPTY,
+    defaultValues: toForm(null),
+  });
+
+  // 地址条目列表:新增/删除走 useFieldArray,提交时才序列化成 JSON
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "address",
   });
 
   // 打开 / 切换 initial 时同步表单
@@ -156,12 +100,17 @@ export function CommunityFormDialog({
                 {...register("name")}
               />
             </Field>
-            <Field label="别名" error={errors.alias?.message}>
-              <Input
-                id="c-alias"
-                placeholder="可留空"
-                aria-invalid={!!errors.alias}
-                {...register("alias")}
+            <Field label="别名" hint="输入后回车添加;空列表保存后别名清空">
+              <Controller
+                control={control}
+                name="alias"
+                render={({ field }) => (
+                  <AliasTagInput
+                    value={field.value}
+                    onChange={field.onChange}
+                    max={20}
+                  />
+                )}
               />
             </Field>
           </div>
@@ -208,17 +157,45 @@ export function CommunityFormDialog({
           </div>
 
           <Field
-            label="address (JSON 字符串)"
-            hint="留空表示不修改,非空必须是合法 JSON"
+            label="地址"
+            hint="可添加多条,每条一个地址;空列表保存后地址为空"
             error={errors.address?.message}
           >
-            <Textarea
-              id="c-address"
-              placeholder='例如:{"province":"北京","city":"北京","district":"朝阳区"}'
-              aria-invalid={!!errors.address}
-              className="min-h-20 font-mono text-[12px]"
-              {...register("address")}
-            />
+            <div className="space-y-2">
+              {fields.length === 0 && (
+                <p className="text-[12px] text-muted-foreground">暂无地址,点击下方按钮添加。</p>
+              )}
+              {fields.map((field, index) => (
+                <div key={field.id} className="flex items-center gap-2">
+                  <Input
+                    id={`c-address-${index}`}
+                    placeholder={`地址 ${index + 1}`}
+                    aria-label={`地址 ${index + 1}`}
+                    {...register(`address.${index}.value`)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => remove(index)}
+                    aria-label={`删除地址 ${index + 1}`}
+                    title="删除该条地址"
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => append({ value: "" })}
+              >
+                <Plus className="size-3.5" />
+                添加地址
+              </Button>
+            </div>
           </Field>
 
           <DialogFooter>

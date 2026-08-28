@@ -40,6 +40,7 @@ import { useCrudExcel } from "@/lib/crud/use-crud-excel";
 import { useCrudMutations } from "@/lib/crud/use-crud-mutations";
 import { useCrudTable } from "@/lib/crud/use-crud-table";
 import { toApiError } from "@/lib/api/error";
+import { parseAliasEntries } from "@/lib/alias-entries";
 
 import { api } from "@/trpc/react";
 
@@ -203,7 +204,8 @@ export function CommunityPage() {
   // —— 9. 导出 / 导入 套件 ——
   type ImportRowInput = {
     name: string;
-    alias?: string;
+    /** 多个别名以 / 分隔传入,导入时拆成数组 */
+    alias?: string[];
     regionId?: string;
     status?: 0 | 1;
   };
@@ -219,7 +221,7 @@ export function CommunityPage() {
     ],
     exportRow: (r) => ({
       "名称": r.name,
-      "别名": r.alias ?? "",
+      "别名": parseAliasEntries(r.alias).join(" / "),
       "所属区划ID": r.regionId ?? "",
       "状态": r.status === 1 ? 1 : 0,
     }),
@@ -246,7 +248,8 @@ export function CommunityPage() {
     ],
     coerceRow: (r) => ({
       name: r.name ?? "",
-      alias: r.alias ?? undefined,
+      // Excel 单元格可能是 "/" 分隔的多个值 → 拆成数组(路由层按数组解析)
+      alias: splitSlashList(r.alias),
       regionId: r.regionId ?? undefined,
       status:
         r.status === "1" ? 1 : r.status === "0" ? 0 : undefined,
@@ -411,6 +414,15 @@ export function CommunityPage() {
       </Dialog>
     </div>
   );
+}
+
+/** Excel 导入:把 " / " 分隔的多个值拆成数组(导出时的反向操作) */
+function splitSlashList(raw: string | undefined): string[] | undefined {
+  const list = (raw ?? "")
+    .split("/")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return list.length > 0 ? list : undefined;
 }
 
 /**

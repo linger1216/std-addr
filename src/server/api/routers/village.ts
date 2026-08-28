@@ -5,26 +5,24 @@ import {
   adminProcedure,
   createTRPCRouter,
 } from "@/server/api/trpc";
-import { communityStatusSchema } from "@/lib/validators/community";
+import { communityStatusSchema, optionalRegionIdSchema } from "@/lib/validators/community";
+import { toErrorMessage, toRegionIdOrNull } from "@/lib/constants";
+import { parseAliasEntries } from "@/lib/alias-entries";
 
 const statusSchema = communityStatusSchema;
 
-/** JSON 字段:geom 暂不在 schema 中(Prisma 不支持 GEOMCOLLECTION 写入) */
-const jsonValueSchema = z
-  .union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(z.unknown()),
-    z.record(z.unknown()),
-  ])
+/**
+ * alias 接收多种形态:字符串(单值)、字符串数组(多值)、JSON 字符串。
+ * router 内部用 parseAliasEntries 归一,最终落库为字符串数组或 NULL。
+ */
+const aliasInputSchema = z
+  .union([z.string(), z.array(z.string().trim().min(1).max(100))])
   .optional();
 
 const villageCreateInput = z.object({
   name: z.string().trim().min(1).max(100),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
   // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持;暂不在 schema
   status: statusSchema.default(1),
 });
@@ -32,33 +30,33 @@ const villageCreateInput = z.object({
 const villageUpdateInput = z.object({
   id: z.string(),
   name: z.string().trim().min(1).max(100).optional(),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
   // geom: 同上
   status: statusSchema.optional(),
 });
 
 const villageImportRow = z.object({
   name: z.string().min(1).max(100),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
   status: statusSchema.optional(),
 });
 
 /**
- * 把业务 JSON → Prisma 可写值。
- * undefined → 跳过(不写);null → JsonNull(清空);
- * 其余 → 类型安全的 InputJsonValue(避免 as 强转)。
+ * 别名(JSON 列)归一 —— 多值数组形式。
+ *   - undefined / 空数组 / 元素全空 → JsonNull(等价 NULL,清空列)
+ *   - 否则 → 字符串数组(Prisma 序列化为 JSON 数组)
  *
- * 当前没有 JSON 字段在写路径(geom 暂不支持),该函数暂未引用。
- * 留着作为基础设施,后续如需写 JSON 字段直接调用。
+ * 兼容:旧客户端若传单个字符串/JSON 字符串,parseAliasEntries 会展平成数组;
+ * 兼容历史脏数据:老 schema(String 列)可能存为单字符串或字符串数组,都能解析。
  */
-function toPrismaJson(
-  v: unknown,
-): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
-  if (v === undefined) return undefined;
-  if (v === null) return Prisma.JsonNull;
-  return v;
+function toNullableAlias(
+  v: string | string[] | undefined,
+): string[] | typeof Prisma.JsonNull {
+  const list = parseAliasEntries(v);
+  if (list.length === 0) return Prisma.JsonNull;
+  return list;
 }
 
 type VillageWithRegion = Prisma.VillageGetPayload<{
@@ -107,7 +105,8 @@ function buildWhere(input: FilterInput): Prisma.VillageWhereInput {
   if (input.q) {
     where.OR = [
       { name: { contains: input.q } },
-      { alias: { contains: input.q } },
+      // alias 是 JSON 列,字符串匹配要用 string_contains(不是 contains)
+      { alias: { string_contains: input.q } },
     ];
   }
   if (input.regionId) where.regionId = input.regionId;
@@ -235,8 +234,10 @@ export const villageRouter = createTRPCRouter({
       ctx.db.village.create({
         data: {
           name: input.name,
-          alias: input.alias ?? null,
-          regionId: input.regionId ?? null,
+          // alias 多值数组;空 → JsonNull,非空 → 数组(Prisma 序列化为 JSON 数组)
+          alias: toNullableAlias(input.alias),
+          // ""(未指定)/ undefined → null;合法 region id → 原样
+          regionId: toRegionIdOrNull(input.regionId),
           // geom: Unsupported 类型,Prisma 不能直接写;需要时走 raw SQL
           status: input.status,
           createdAt: new Date(),
@@ -249,8 +250,9 @@ export const villageRouter = createTRPCRouter({
     .mutation(({ ctx, input }) => {
       const data: Prisma.VillageUncheckedUpdateInput = {};
       if (input.name !== undefined) data.name = input.name;
-      if (input.alias !== undefined) data.alias = input.alias;
-      if (input.regionId !== undefined) data.regionId = input.regionId;
+      // alias 是 JSON 数组:undefined = 不动,空数组 → JsonNull,非空 → 数组
+      if (input.alias !== undefined) data.alias = toNullableAlias(input.alias);
+      if (input.regionId !== undefined) data.regionId = toRegionIdOrNull(input.regionId);
       // geom: Unsupported 类型,不支持 update,需要时走 raw SQL
       if (input.status !== undefined) data.status = input.status;
       return ctx.db.village.update({
@@ -328,18 +330,17 @@ export const villageRouter = createTRPCRouter({
           await ctx.db.village.create({
             data: {
               name: row.name,
-              alias: row.alias ?? null,
-              regionId: row.regionId ?? null,
+              // alias 多值数组;空 → JsonNull,非空 → 数组
+              alias: toNullableAlias(row.alias),
+              // ""(未指定)/ undefined → null
+              regionId: toRegionIdOrNull(row.regionId),
               status: row.status ?? 1,
               createdAt: new Date(),
             },
           });
           created++;
         } catch (err) {
-          errors.push({
-            index: i,
-            message: err instanceof Error ? err.message : String(err),
-          });
+          errors.push({ index: i, message: toErrorMessage(err) });
         }
       }
 

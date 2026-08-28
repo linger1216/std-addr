@@ -1,8 +1,14 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import { memo, useRef } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { flexRender } from "@tanstack/react-table";
+
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -12,138 +18,251 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { TableSkeleton } from "@/components/ui/skeleton-blocks";
+import { type useAppTable, createAppColumnHelper } from "@/lib/table";
+import { formatShortDate } from "@/lib/format";
+import type { RouterOutputs } from "@/trpc/react";
 
-export type RoadRow = {
-  id: string;
-  road: string;
-  status: number;
-  createdAt: Date | null;
+/** 表格行 = list procedure 的 item 类型(单一事实来源) */
+export type RoadRow = RouterOutputs["road"]["list"]["items"][number];
+
+const columnHelper = createAppColumnHelper<RoadRow>();
+
+/** 行级回调 —— 通过 column meta 透传给列定义使用 */
+type RoadRowCallbacks = {
+  onView?: (row: RoadRow) => void;
+  onEdit?: (row: RoadRow) => void;
+  onDelete?: (row: RoadRow) => void;
 };
 
-function fmtDate(d: Date | string | null): string {
-  if (d === null || d === undefined) return "—";
-  const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return String(d);
-  return date.toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+/**
+ * 列定义:全选/单选交给 TanStack rowSelection 管理,
+ * 行级操作按钮通过 column meta.callbacks 拿到回调。
+ */
+export function createRoadColumns() {
+  return columnHelper.columns([
+    columnHelper.display({
+      id: "select",
+      header: ({ table }) => (
+        <div className="flex justify-center">
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            indeterminate={
+              table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()
+            }
+            onCheckedChange={(v) => table.toggleAllPageRowsSelected(Boolean(v))}
+            aria-label="全选"
+          />
+        </div>
+      ),
+      cell: ({ row }) => (
+        <div className="flex justify-center">
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(v) => row.toggleSelected(Boolean(v))}
+            aria-label={`选择 ${row.original.road}`}
+          />
+        </div>
+      ),
+      meta: { className: "w-10" },
+    }),
+    columnHelper.accessor("road", {
+      header: () => <div className="text-center">道路名</div>,
+      cell: (info) => <span className="items-center font-medium">{info.getValue()}</span>,
+    }),
+    columnHelper.accessor("status", {
+      header: () => <div className="text-center">状态</div>,
+      cell: (info) => <StatusBadge status={info.getValue()} />,
+      meta: { className: "w-24" },
+    }),
+    columnHelper.accessor("createdAt", {
+      header: () => <div className="text-center">创建时间</div>,
+      cell: (info) => (
+        <span className="text-muted-foreground">
+          {formatShortDate(info.getValue())}
+        </span>
+      ),
+      meta: { className: "w-28" },
+    }),
+    columnHelper.display({
+      id: "actions",
+      header: () => <div className="text-center">操作</div>,
+      cell: ({ row, table }) => {
+        const r = row.original;
+        const cb = (table.options.meta as { callbacks?: RoadRowCallbacks })
+          ?.callbacks;
+        return (
+          <div className="flex items-center justify-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cb?.onView?.(r)}
+              className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+            >
+              查看
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cb?.onEdit?.(r)}
+              className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+            >
+              编辑
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cb?.onDelete?.(r)}
+              className="h-7 px-2 text-xs font-normal text-danger hover:bg-danger-soft hover:text-danger"
+            >
+              删除
+            </Button>
+          </div>
+        );
+      },
+      meta: { className: "w-44" },
+    }),
+  ]);
 }
 
-export function RoadTable({
-  rows,
-  isLoading,
-  selectedIds,
-  onToggleAll,
-  onToggleOne,
-  allSelected,
-  onView,
-  onEdit,
-  onDelete,
-}: {
-  rows: RoadRow[];
-  isLoading: boolean;
-  selectedIds: Set<string>;
-  onToggleAll: (next: boolean) => void;
-  onToggleOne: (id: string, next: boolean) => void;
-  allSelected: boolean;
-  onView: (row: RoadRow) => void;
-  onEdit: (row: RoadRow) => void;
-  onDelete: (row: RoadRow) => void;
-}) {
-  const empty = !isLoading && rows.length === 0;
+/** 排序状态图标:未排序 → 双向箭头(灰);升/降 → 实心箭头 */
+function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-10">
-            <Checkbox
-              checked={allSelected}
-              onCheckedChange={(v) => onToggleAll(Boolean(v))}
-              aria-label="全选"
-            />
-          </TableHead>
-          <TableHead>道路名</TableHead>
-          <TableHead className="w-24">状态</TableHead>
-          <TableHead className="w-32">创建时间</TableHead>
-          <TableHead className="w-44 text-right">操作</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {isLoading ? (
-          <TableSkeleton rows={4} cols={5} />
-        ) : empty ? (
-          <TableRow>
-            <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-              暂无道路
-            </TableCell>
-          </TableRow>
+    <span className="flex shrink-0 items-center">
+      <motion.span
+        initial={false}
+        animate={{ opacity: sorted ? 1 : 0.4 }}
+        transition={{ duration: 0.15 }}
+      >
+        {sorted === "asc" ? (
+          <ArrowUp className="size-3.5" />
+        ) : sorted === "desc" ? (
+          <ArrowDown className="size-3.5" />
         ) : (
-          rows.map((row) => {
-            const checked = selectedIds.has(row.id);
-            return (
-              <TableRow
-                key={row.id}
-                data-state={checked ? "selected" : undefined}
-              >
-                <TableCell>
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(v) => onToggleOne(row.id, Boolean(v))}
-                    aria-label={`选择 ${row.road}`}
-                  />
-                </TableCell>
-                <TableCell className="font-medium">{row.road}</TableCell>
-                <TableCell>
-                  <Badge
-                    className={cn(
-                      "border-transparent",
-                      row.status === 1
-                        ? "bg-success-soft text-success-fg"
-                        : "bg-danger-soft text-danger-fg",
-                    )}
-                  >
-                    {row.status === 1 ? "启用" : "禁用"}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {fmtDate(row.createdAt)}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onView(row)}
-                      className="h-7 px-2 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
-                    >
-                      查看
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEdit(row)}
-                      className="h-7 px-2 text-[12.5px] font-normal text-muted-foreground hover:text-foreground"
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onDelete(row)}
-                      className="h-7 px-2 text-[12.5px] font-normal text-danger hover:bg-danger-soft hover:text-danger"
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })
+          <ChevronsUpDown className="size-3.5" />
         )}
-      </TableBody>
-    </Table>
+      </motion.span>
+    </span>
   );
 }
+
+/**
+ * 展示组件:接收外部 table 实例 + 行回调。
+ * 选中/分页/排序等状态由父级 useCrudTable 统一管,不重复造轮子。
+ */
+export const RoadTable = memo(function RoadTable({
+  table,
+  isLoading,
+  callbacks,
+}: {
+  table: ReturnType<typeof useAppTable<RoadRow>>;
+  isLoading: boolean;
+  callbacks: RoadRowCallbacks;
+}) {
+  // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取。
+  // ponytail: 用 ref 持有同一对象,首次渲染把 meta 注入到 table.options,
+  // 之后只更新 ref.current.callbacks,避免反复调用 setOptions 触发不必要的重渲染。
+  const metaRef = useRef<{ callbacks: RoadRowCallbacks }>({ callbacks });
+  metaRef.current.callbacks = callbacks;
+  if (!table.options.meta) {
+    table.setOptions((prev) => ({ ...prev, meta: metaRef.current }));
+  }
+
+  const headers = table.getHeaderGroups()[0]?.headers;
+  const colSpan = headers?.length ?? table.getAllLeafColumns().length;
+  const syncing = isLoading;
+  const empty = !syncing && table.getRowModel().rows.length === 0;
+
+  return (
+    <div className="relative h-full min-h-0">
+      <AnimatePresence>
+        {syncing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-[1px]"
+          >
+            <Spinner label="加载中…" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <Table containerClassName="h-full overflow-y-auto">
+        <TableHeader>
+          {table.getHeaderGroups().map((hg) => (
+            <TableRow key={hg.id}>
+              {hg.headers.map((header) => (
+                <HeaderCell key={header.id} header={header} />
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {empty ? (
+            <TableRow>
+              <TableCell
+                colSpan={colSpan}
+                className="py-10 text-center text-muted-foreground"
+              >
+                暂无道路
+              </TableCell>
+            </TableRow>
+          ) : (
+            table.getRowModel().rows.map((row, index) => (
+              <DataRow key={row.id} row={row} index={index} />
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+});
+
+/** 表头单元格(排序 + 点击) */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
+function HeaderCell({ header }: { header: any }) {
+  const meta = header.column.columnDef.meta;
+  const canSort = header.column.getCanSort();
+  const sorted = header.column.getIsSorted();
+  return (
+    <TableHead key={header.id} className={cn("text-center", meta?.className)}>
+      {header.isPlaceholder ? null : (
+        <div
+          className={
+            canSort
+              ? "flex cursor-pointer items-center justify-center gap-1 select-none"
+              : undefined
+          }
+          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+          title={canSort ? "点击排序" : undefined}
+        >
+          <span>
+            {flexRender(header.column.columnDef.header, header.getContext())}
+          </span>
+          {canSort && <SortIcon sorted={sorted} />}
+        </div>
+      )}
+    </TableHead>
+  );
+}
+
+/** 数据行:选中状态 + 单元格渲染 + 斑马行(偶数行浅底) */
+function DataRow({ row, index }: { row: any; index: number }) {
+  return (
+    <TableRow
+      key={row.id}
+      data-state={row.getIsSelected() ? "selected" : undefined}
+      className={index % 2 === 1 ? "bg-muted/30" : undefined}
+    >
+      {row.getVisibleCells().map((cell: any) => {
+        const meta = cell.column.columnDef.meta;
+        return (
+          <TableCell key={cell.id} className={cn("text-center", meta?.className)}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        );
+      })}
+    </TableRow>
+  );
+}
+/* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */

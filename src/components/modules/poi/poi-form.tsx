@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
+import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,47 +16,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchSelect } from "@/components/ui/search-select";
+import { AliasTagInput } from "@/components/modules/shared/alias-tag-input";
+import type { RegionOption } from "./poi-toolbar";
+import type { RouterOutputs } from "@/trpc/react";
+// 表单的纯数据映射(toForm/toSubmit/schema)独立成模块,便于单元测试
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import type { RegionOption } from "@/components/modules/poi/poi-toolbar";
+  formSchema,
+  toForm,
+  toSubmit,
+  type PoiFormValues,
+  type FormSchema,
+} from "./poi-form-mappers";
 
-export type PoiFormValues = {
-  id?: string | null;
-  name: string;
-  type: string;
-  alias: string;
-  regionId: string;
-  status: 0 | 1;
-  address: string; // JSON 文本,提交时尝试解析
-};
+/** 详情类型 = getById 输出(单一事实来源) */
+export type PoiDetail = NonNullable<RouterOutputs["poi"]["getById"]>;
 
-export type PoiDetail = {
-  id: string;
-  name: string;
-  type: string | null;
-  alias: string | null;
-  regionId: string | null;
-  status: number;
-  address: unknown;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-const EMPTY: PoiFormValues = {
-  id: null,
-  name: "",
-  type: "",
-  alias: "",
-  regionId: "",
-  status: 1,
-  address: "",
-};
+/** 提交值类型定义在 mappers 模块(与 toForm/toSubmit 同源) */
+export type { PoiFormValues } from "./poi-form-mappers";
 
 export function PoiFormDialog({
   open,
@@ -70,62 +50,32 @@ export function PoiFormDialog({
   onSubmit: (values: PoiFormValues) => void;
   isPending: boolean;
 }) {
-  const [form, setForm] = useState<PoiFormValues>(EMPTY);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    register,
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormSchema>({
+    resolver: zodResolver(formSchema),
+    defaultValues: toForm(null),
+  });
 
-  const isEdit = useMemo(() => {
-    if (!initial) return false;
-    if ("createdAt" in initial) return true;
-    return Boolean(initial.id);
-  }, [initial]);
+  // 地址条目列表:新增/删除走 useFieldArray,提交时才序列化成 JSON
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "address",
+  });
 
+  // 打开 / 切换 initial 时同步表单
   useEffect(() => {
-    if (!open) return;
-    if (initial) {
-      if ("createdAt" in initial) {
-        setForm({
-          id: initial.id,
-          name: initial.name,
-          type: initial.type ?? "",
-          alias: initial.alias ?? "",
-          regionId: initial.regionId ?? "",
-          status: initial.status === 0 ? 0 : 1,
-          address: initial.address ? JSON.stringify(initial.address, null, 2) : "",
-        });
-      } else {
-        setForm({ ...EMPTY, ...initial });
-      }
-    } else {
-      setForm(EMPTY);
-    }
-    setError(null);
-  }, [open, initial]);
+    if (open) reset(toForm(initial));
+  }, [open, initial, reset]);
 
-  function handleSubmit() {
-    setError(null);
-    if (!form.name.trim()) {
-      setError("请输入 POI 名称");
-      return;
-    }
-    if (form.address.trim()) {
-      try {
-        JSON.parse(form.address);
-      } catch (err) {
-        setError(
-          `address 不是合法 JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return;
-      }
-    }
-    onSubmit({
-      id: form.id,
-      name: form.name.trim(),
-      type: form.type.trim(),
-      alias: form.alias.trim(),
-      regionId: form.regionId,
-      status: form.status,
-      address: form.address,
-    });
+  const isEdit = initial != null && "createdAt" in initial;
+
+  function handleValid(values: FormSchema) {
+    onSubmit(toSubmit(values));
   }
 
   return (
@@ -134,119 +84,165 @@ export function PoiFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "编辑 POI" : "新建 POI"}</DialogTitle>
           <DialogDescription>
-            维护兴趣点的名称、分类与坐标信息。
+            维护兴趣点的名称、分类与地址信息。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit(handleValid)} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="p-name">名称 *</Label>
+            <Field label="名称 *" error={errors.name?.message}>
               <Input
                 id="p-name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="例如:市第一人民医院"
+                aria-invalid={!!errors.name}
+                {...register("name")}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="p-type">类型</Label>
+            </Field>
+            <Field label="类型" error={errors.type?.message}>
               <Input
                 id="p-type"
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
                 placeholder="例如:医院"
+                aria-invalid={!!errors.type}
+                {...register("type")}
               />
-            </div>
+            </Field>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="p-alias">别名</Label>
-              <Input
-                id="p-alias"
-                value={form.alias}
-                onChange={(e) => setForm({ ...form, alias: e.target.value })}
-                placeholder="可留空"
+            <Field label="所属区划">
+              <Controller
+                control={control}
+                name="regionId"
+                render={({ field }) => (
+                  <SearchSelect
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    options={[
+                      { value: "", label: "未指定" },
+                      ...regions.map((r) => ({ value: r.id, label: r.name })),
+                    ]}
+                    placeholder="选择区划"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="p-region">所属区划</Label>
-              <Select
-                value={form.regionId}
-                items={[
-                  { value: "", label: "未指定" },
-                  ...regions.map((r) => ({ value: r.id, label: r.name })),
-                ]}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    regionId: v ? String(v) : "",
-                  })
-                }
-              >
-                <SelectTrigger id="p-region" className="h-9">
-                  <SelectValue placeholder="选择区划" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">未指定</SelectItem>
-                  {regions.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            </Field>
+            <Field label="状态">
+              <Controller
+                control={control}
+                name="status"
+                render={({ field }) => (
+                  <SearchSelect<string>
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                    options={[
+                      { value: "1", label: "启用" },
+                      { value: "0", label: "禁用" },
+                    ]}
+                    placeholder="状态"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
+              />
+            </Field>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="p-status">状态</Label>
-            <Select
-              value={String(form.status)}
-              items={[
-                { value: "1", label: "启用" },
-                { value: "0", label: "禁用" },
-              ]}
-              onValueChange={(v) =>
-                setForm({ ...form, status: Number(v) as 0 | 1 })
-              }
-            >
-              <SelectTrigger id="p-status" className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">启用</SelectItem>
-                <SelectItem value="0">禁用</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="p-address">address (JSON 字符串)</Label>
-            <Textarea
-              id="p-address"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-              placeholder='例如:{"province":"北京","city":"北京","district":"朝阳区","street":"XX路"}'
-              className="min-h-20 font-mono text-[12px]"
+          <Field label="别名" hint="输入后回车添加;空列表保存后别名清空">
+            <Controller
+              control={control}
+              name="alias"
+              render={({ field }) => (
+                <AliasTagInput
+                  value={field.value}
+                  onChange={field.onChange}
+                  max={20}
+                />
+              )}
             />
-          </div>
+          </Field>
 
-          {error && (
-            <p className="text-[12.5px] text-danger">{error}</p>
-          )}
-        </div>
+          <Field
+            label="地址"
+            hint="可添加多条,每条一个地址;空列表保存后地址为空"
+            error={errors.address?.message}
+          >
+            <div className="space-y-2">
+              {fields.length === 0 && (
+                <p className="text-[12px] text-muted-foreground">暂无地址,点击下方按钮添加。</p>
+              )}
+              {fields.map((field, index) => (
+                <div key={field.id} className="flex items-center gap-2">
+                  <Input
+                    id={`p-address-${index}`}
+                    placeholder={`地址 ${index + 1}`}
+                    aria-label={`地址 ${index + 1}`}
+                    {...register(`address.${index}.value` as const)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => remove(index)}
+                    aria-label={`删除地址 ${index + 1}`}
+                    title="删除该条地址"
+                    className="shrink-0 text-muted-foreground hover:text-danger"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => append({ value: "" })}
+              >
+                <Plus className="size-3.5" />
+                添加地址
+              </Button>
+            </div>
+          </Field>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "保存中…" : "保存"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "保存中…" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 字段行(Label + 错误提示) —— 抽出来消除重复 */
+function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+      {hint && !error && (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }

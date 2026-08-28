@@ -6,11 +6,14 @@ import {
   createTRPCRouter,
 } from "@/server/api/trpc";
 import {
+  aliasInputSchema,
   communityCreateSchema,
   communityStatusSchema,
   communityUpdateSchema,
+  optionalRegionIdSchema,
 } from "@/lib/validators/community";
-import { toErrorMessage } from "@/lib/constants";
+import { toErrorMessage, toRegionIdOrNull } from "@/lib/constants";
+import { parseAliasEntries } from "@/lib/alias-entries";
 
 /** 状态枚举复用共享 schema */
 const statusSchema = communityStatusSchema;
@@ -28,12 +31,29 @@ function toPrismaJson(
   return v;
 }
 
+/**
+ * 别名(JSON 列)归一 —— 多值数组形式(对齐 village.alias)。
+ *   - undefined / 空数组 / 元素全空 → JsonNull(等价 NULL,清空列)
+ *   - 否则 → 字符串数组(Prisma 序列化为 JSON 数组)
+ *
+ * 兼容:旧客户端若传单个字符串/JSON 字符串,parseAliasEntries 会展平成数组;
+ * 兼容历史脏数据:老 schema(String 列)可能存为单字符串或字符串数组,都能解析。
+ */
+function toNullableAlias(
+  v: string | string[] | undefined,
+): string[] | typeof Prisma.JsonNull {
+  const list = parseAliasEntries(v);
+  if (list.length === 0) return Prisma.JsonNull;
+  return list;
+}
+
 const communityCreateInput = communityCreateSchema;
 const communityUpdateInput = communityUpdateSchema;
 const communityImportRow = z.object({
   name: z.string().min(1).max(100),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
+  alias: aliasInputSchema,
+  // 空串 = 未指定,create 时归一为 null
+  regionId: optionalRegionIdSchema,
   status: statusSchema.optional(),
 });
 
@@ -86,7 +106,8 @@ function buildWhere(input: FilterInput): Prisma.CommunityWhereInput {
   if (input.q) {
     where.OR = [
       { name: { contains: input.q } },
-      { alias: { contains: input.q } },
+      // alias 是 JSON 列,字符串匹配要用 string_contains(不是 contains)
+      { alias: { string_contains: input.q } },
     ];
   }
   if (input.regionId) where.regionId = input.regionId;
@@ -221,8 +242,10 @@ export const communityRouter = createTRPCRouter({
       return ctx.db.community.create({
         data: {
           name: input.name,
-          alias: input.alias ?? null,
-          regionId: input.regionId ?? null,
+          // "" → null(JSON 列不能写空串)
+          alias: toNullableAlias(input.alias),
+          // ""(未指定)/ undefined → null
+          regionId: toRegionIdOrNull(input.regionId),
           // undefined → JsonNull(空 JSON 字段),null → JsonNull,其它 → 值
           address: toPrismaJson(input.address) ?? Prisma.JsonNull,
           // geom: Unsupported 类型,Prisma 不能直接写,统一 NULL(后续如要写空间数据走 raw SQL)
@@ -237,8 +260,10 @@ export const communityRouter = createTRPCRouter({
     .mutation(({ ctx, input }) => {
       const data: Prisma.CommunityUncheckedUpdateInput = {};
       if (input.name !== undefined) data.name = input.name;
-      if (input.alias !== undefined) data.alias = input.alias;
-      if (input.regionId !== undefined) data.regionId = input.regionId;
+      if (input.alias !== undefined)
+        data.alias = toNullableAlias(input.alias);
+      // ""(未指定)→ null = 清空区划;undefined → 不处理
+      if (input.regionId !== undefined) data.regionId = input.regionId || null;
       const address = toPrismaJson(input.address);
       if (address !== undefined) data.address = address;
       // geom: Unsupported 类型,不支持 update,需要时走 raw SQL
@@ -322,8 +347,10 @@ export const communityRouter = createTRPCRouter({
           await ctx.db.community.create({
             data: {
               name: row.name,
-              alias: row.alias ?? null,
-              regionId: row.regionId ?? null,
+              // "" → null(JSON 列不能写空串)
+              alias: toNullableAlias(row.alias),
+              // ""(未指定)/ undefined → null
+              regionId: toRegionIdOrNull(row.regionId),
               status: row.status ?? 1,
               createdAt: new Date(),
             },

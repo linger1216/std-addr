@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,33 +15,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchSelect } from "@/components/ui/search-select";
+import type { RouterOutputs } from "@/trpc/react";
+// 表单的纯数据映射(toForm/toSubmit/schema)独立成模块,便于单元测试
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  formSchema,
+  toForm,
+  toSubmit,
+  type RoadFormValues,
+  type FormSchema,
+} from "./road-form-mappers";
 
-export type RoadFormValues = {
-  id?: string | null;
-  road: string;
-  status: 0 | 1;
-};
+/** 详情类型 = getById 输出(单一事实来源) */
+export type RoadDetail = NonNullable<RouterOutputs["road"]["getById"]>;
 
-export type RoadDetail = {
-  id: string;
-  road: string;
-  status: number;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-};
-
-const EMPTY: RoadFormValues = {
-  id: null,
-  road: "",
-  status: 1,
-};
+/** 提交值类型定义在 mappers 模块(与 toForm/toSubmit 同源) */
+export type { RoadFormValues } from "./road-form-mappers";
 
 export function RoadFormDialog({
   open,
@@ -54,49 +45,31 @@ export function RoadFormDialog({
   onSubmit: (values: RoadFormValues) => void;
   isPending: boolean;
 }) {
-  const [form, setForm] = useState<RoadFormValues>(EMPTY);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    register,
+    control,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormSchema>({
+    resolver: zodResolver(formSchema),
+    defaultValues: toForm(null),
+  });
 
-  const isEdit = useMemo(() => {
-    if (!initial) return false;
-    if ("createdAt" in initial) return true;
-    return Boolean(initial.id);
-  }, [initial]);
-
+  // 打开 / 切换 initial 时同步表单
   useEffect(() => {
-    if (!open) return;
-    if (initial) {
-      if ("createdAt" in initial) {
-        setForm({
-          id: initial.id,
-          road: initial.road,
-          status: initial.status === 0 ? 0 : 1,
-        });
-      } else {
-        setForm({ ...EMPTY, ...initial });
-      }
-    } else {
-      setForm(EMPTY);
-    }
-    setError(null);
-  }, [open, initial]);
+    if (open) reset(toForm(initial));
+  }, [open, initial, reset]);
 
-  function handleSubmit() {
-    setError(null);
-    if (!form.road.trim()) {
-      setError("请输入道路名");
-      return;
-    }
-    onSubmit({
-      id: form.id,
-      road: form.road.trim(),
-      status: form.status,
-    });
+  const isEdit = initial != null && "createdAt" in initial;
+
+  function handleValid(values: FormSchema) {
+    onSubmit(toSubmit(values));
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "编辑道路" : "新建道路"}</DialogTitle>
           <DialogDescription>
@@ -104,51 +77,75 @@ export function RoadFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="r-road">道路名 *</Label>
-            <Input
-              id="r-road"
-              value={form.road}
-              onChange={(e) => setForm({ ...form, road: e.target.value })}
-              placeholder="例如:中山大道"
-            />
+        <form onSubmit={handleSubmit(handleValid)} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="道路名 *" error={errors.road?.message}>
+              <Input
+                id="r-road"
+                placeholder="例如:中山大道"
+                aria-invalid={!!errors.road}
+                {...register("road")}
+              />
+            </Field>
+            <Field label="状态">
+              <Controller
+                control={control}
+                name="status"
+                render={({ field }) => (
+                  <SearchSelect<string>
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                    options={[
+                      { value: "1", label: "启用" },
+                      { value: "0", label: "禁用" },
+                    ]}
+                    placeholder="状态"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
+              />
+            </Field>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="r-status">状态</Label>
-            <Select
-              value={String(form.status)}
-              items={[
-                { value: "1", label: "启用" },
-                { value: "0", label: "禁用" },
-              ]}
-              onValueChange={(v) =>
-                setForm({ ...form, status: Number(v) as 0 | 1 })
-              }
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
             >
-              <SelectTrigger id="r-status" className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">启用</SelectItem>
-                <SelectItem value="0">禁用</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {error && <p className="text-[12.5px] text-danger">{error}</p>}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} disabled={isPending}>
-            {isPending ? "保存中…" : "保存"}
-          </Button>
-        </DialogFooter>
+              取消
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "保存中…" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 字段行(Label + 错误提示) —— 抽出来消除重复 */
+function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+      {hint && !error && (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }

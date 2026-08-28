@@ -6,6 +6,8 @@
  *   - formatShortDate: Date | string | null | undefined → YYYY-MM-DD
  *   - formatJson: unknown → 格式化 JSON 文本,不可序列化时降级
  *   - normalizeAddress: unknown → 字符串数组(地址 JSON 字段归一)
+ *   - parseAddressEntries: unknown → 字符串数组(字符串先按 JSON 解析再归一)
+ *   - jsonText: unknown → 可展示文本(字符串原样,null/对象等 → 占位符)
  *   - orEmpty: null | undefined → PLACEHOLDER_EMPTY
  */
 
@@ -76,4 +78,36 @@ export function normalizeAddress(value: unknown): string[] {
   }
   if (typeof value === "number" || typeof value === "boolean") return [String(value)];
   return [];
+}
+
+/**
+ * 把任意形态的"地址 JSON"解析为条目数组(1-N 条),供详情/表单列表编辑用。
+ * 与 normalizeAddress 的区别:入参是 JSON 字符串时先尝试 JSON.parse 再归一,
+ * 避免拿到 `["a","b"]` 这种文本时被当成单条字符串展示。
+ *
+ * 规则:
+ *  - null / undefined / 空串 → []
+ *  - string 且能解析成 JSON  → 按解析结果再走 normalizeAddress
+ *  - string 解析失败         → [string](当成单条地址)
+ *  - 其余                    → normalizeAddress
+ */
+export function parseAddressEntries(value: unknown): string[] {
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (!s) return [];
+    try {
+      return normalizeAddress(JSON.parse(s));
+    } catch {
+      return [s];
+    }
+  }
+  return normalizeAddress(value);
+}
+
+/**
+ * JSON 任意值 → 可展示文本:字符串原样返回;null / 对象 / 数组等 → 占位符。
+ * 用于库里的 JSON 列(如 communities.alias)在列表/详情的展示。
+ */
+export function jsonText(v: unknown): string {
+  return typeof v === "string" ? v : PLACEHOLDER_EMPTY;
 }

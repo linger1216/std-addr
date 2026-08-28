@@ -151,7 +151,9 @@ model Region {
 model Community {
     id        String   @id @default(cuid())
     name      String
-    alias     String?
+    // 注意:DDL 里 alias 是 json 列(空串会被 MySQL 拒绝,报 3140),
+    // 这里必须声明 Json?,空别名用 null 表示。
+    alias     Json?
     regionId  String?  @map("region_id")
     address   Json?
     // DDL 是 GEOMCOLLECTION(MySQL 空间类型),Prisma 没有原生支持;
@@ -172,7 +174,7 @@ model Community {
 model Village {
     id        String   @id @default(cuid())
     name      String
-    alias     String?
+    alias     Json?
     regionId  String?  @map("region_id")
     // DDL 是 GEOMCOLLECTION(MySQL 空间类型),Prisma 不支持 → Unsupported
     geom      Unsupported("geomcollection")? @map("geom")
@@ -202,8 +204,10 @@ model Poi {
     id        String   @id @default(cuid())
     name      String
     type      String?
-    alias     String?
+    // 多值别名:JSON 数组(对齐 community/village.alias)
+    alias     Json?
     regionId  String?  @map("region_id")
+    // 地址列表:JSON 数组(对齐 community.address)
     address   Json?
     // DDL 是 GEOMCOLLECTION(MySQL 空间类型),Prisma 不支持 → Unsupported
     geom      Unsupported("geomcollection")? @map("geom")

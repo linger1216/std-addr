@@ -1,5 +1,5 @@
-import { PoiClient } from "@/components/modules/poi/poi-client";
+import { PoiPage } from "@/components/modules/poi/poi-page";
 
 export default function KnowledgePoiPage() {
-  return <PoiClient />;
+  return <PoiPage />;
 }

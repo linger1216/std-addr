@@ -5,46 +5,76 @@ import {
   adminProcedure,
   createTRPCRouter,
 } from "@/server/api/trpc";
+import { toErrorMessage } from "@/lib/constants";
 
 const statusSchema = z.union([z.literal(0), z.literal(1)]);
 
 const roadCreateInput = z.object({
-  road: z.string().min(1).max(100),
+  road: z.string().trim().min(1).max(100),
   status: statusSchema.default(1),
 });
 
 const roadUpdateInput = z.object({
   id: z.string(),
-  road: z.string().min(1).max(100).optional(),
+  road: z.string().trim().min(1).max(100).optional(),
   status: statusSchema.optional(),
 });
 
 const roadImportRow = z.object({
-  road: z.string().min(1).max(100),
+  road: z.string().trim().min(1).max(100),
   status: statusSchema.optional(),
 });
 
-export const roadRouter = createTRPCRouter({
-  /** 分页 + 搜索 + 状态筛选 */
-  list: adminProcedure
-    .input(
+/** 可排序列白名单 */
+const roadSortFields = ["road", "status", "createdAt"] as const;
+
+const listInput = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(200).default(20),
+  q: z.string().trim().optional(),
+  status: statusSchema.optional(),
+  sort: z
+    .array(
       z.object({
-        page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(200).default(20),
-        q: z.string().trim().optional(),
-        status: statusSchema.optional(),
+        id: z.enum(roadSortFields),
+        desc: z.boolean().default(false),
       }),
     )
+    .max(3)
+    .optional(),
+});
+
+type FilterInput = Pick<z.infer<typeof listInput>, "q" | "status">;
+
+function buildWhere(input: FilterInput): Prisma.RoadWhereInput {
+  const where: Prisma.RoadWhereInput = {};
+  if (input.q) where.road = { contains: input.q };
+  if (input.status !== undefined) where.status = input.status;
+  return where;
+}
+
+function buildOrderBy(
+  sort: z.infer<typeof listInput>["sort"],
+): Prisma.RoadOrderByWithRelationInput[] {
+  if (sort && sort.length > 0) {
+    return sort.map((s) => ({ [s.id]: s.desc ? "desc" : "asc" }));
+  }
+  return [{ status: "desc" }, { createdAt: "desc" }];
+}
+
+export const roadRouter = createTRPCRouter({
+  /** 分页 + 搜索 + 状态筛选 + 排序 */
+  list: adminProcedure
+    .input(listInput)
     .query(async ({ ctx, input }) => {
-      const where: Prisma.RoadWhereInput = {};
-      if (input.q) where.road = { contains: input.q };
-      if (input.status !== undefined) where.status = input.status;
+      const where = buildWhere(input);
+      const orderBy = buildOrderBy(input.sort);
 
       const [total, rows] = await Promise.all([
         ctx.db.road.count({ where }),
         ctx.db.road.findMany({
           where,
-          orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+          orderBy,
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
@@ -130,13 +160,11 @@ export const roadRouter = createTRPCRouter({
       z.object({
         q: z.string().trim().optional(),
         status: statusSchema.optional(),
+        sort: listInput.shape.sort,
       }),
     )
     .query(async ({ ctx, input }) => {
-      const where: Prisma.RoadWhereInput = {};
-      if (input.q) where.road = { contains: input.q };
-      if (input.status !== undefined) where.status = input.status;
-
+      const where = buildWhere(input);
       const rows = await ctx.db.road.findMany({
         where,
         select: {
@@ -145,7 +173,7 @@ export const roadRouter = createTRPCRouter({
           status: true,
           createdAt: true,
         },
-        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+        orderBy: buildOrderBy(input.sort),
       });
       return rows.map((row) => ({
         id: row.id,
@@ -178,10 +206,7 @@ export const roadRouter = createTRPCRouter({
           });
           created++;
         } catch (err) {
-          errors.push({
-            index: i,
-            message: err instanceof Error ? err.message : String(err),
-          });
+          errors.push({ index: i, message: toErrorMessage(err) });
         }
       }
 

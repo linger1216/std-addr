@@ -20,8 +20,9 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { type useAppTable, createAppColumnHelper } from "@/lib/table";
-import { orEmpty } from "@/lib/constants";
+import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
 import { formatShortDate, normalizeAddress } from "@/lib/format";
+import { parseAliasEntries } from "@/lib/alias-entries";
 import type { RouterOutputs } from "@/trpc/react";
 
 /** 表格行 = list procedure 的 item 类型(单一事实来源) */
@@ -75,9 +76,8 @@ export function createCommunityColumns() {
     }),
     columnHelper.accessor("alias", {
       header: () => <div className="text-center">别名</div>,
-      cell: (info) => (
-        <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
-      ),
+      cell: (info) => <AliasCell value={info.getValue()} />,
+      meta: { className: "min-w-[160px]" },
     }),
     columnHelper.accessor("regionName", {
       header: () => <div className="text-center">所属区划</div>,
@@ -155,7 +155,9 @@ export function createCommunityColumns() {
 function AddressCell({ value }: { value: unknown }) {
   const lines = normalizeAddress(value);
   if (lines.length === 0) {
-    return <span className="text-muted-foreground">-</span>;
+    return (
+      <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>
+    );
   }
   return (
     <div className="text-muted-foreground">
@@ -163,6 +165,23 @@ function AddressCell({ value }: { value: unknown }) {
         <div key={i} className="flex justify-center">
           <Badge className="p-2.5 mt-1" variant="outline">{line}</Badge>
         </div>
+      ))}
+    </div>
+  );
+}
+
+/** 别名列:JSON 数组 → 多 Badge 横排(对齐 village 别名列) */
+function AliasCell({ value }: { value: unknown }) {
+  const lines = parseAliasEntries(value);
+  if (lines.length === 0) {
+    return <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
+  }
+  return (
+    <div className="flex flex-wrap justify-center gap-1">
+      {lines.map((line, i) => (
+        <Badge key={i} className="p-2.5" variant="outline">
+          {line}
+        </Badge>
       ))}
     </div>
   );

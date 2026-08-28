@@ -7,6 +7,7 @@ import { menuRouter } from "@/server/api/routers/menu";
 import { postRouter } from "@/server/api/routers/post";
 import { roleRouter } from "@/server/api/routers/role";
 import { userRouter } from "@/server/api/routers/user";
+import { regionRouter } from "@/server/api/routers/region";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
 /**
@@ -24,6 +25,7 @@ export const appRouter = createTRPCRouter({
   village: villageRouter,
   road: roadRouter,
   poi: poiRouter,
+  region: regionRouter,
 });
 
 // export type definition of API

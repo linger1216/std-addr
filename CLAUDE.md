@@ -164,8 +164,8 @@ UI 态(分页/排序/选中/dialog open)放在模块私有 zustand store,**用 u
 ### 服务端状态(tRPC + React Query)
 
 - `staleTime: 30s` (全局)
-- 数据变更走 `useCrudMutations`,自动 invalidate list + stats
-- 不要在组件里手动调 `utils.xxx.invalidate()`
+- 数据变更走 `useCrudMutations`,自动 invalidate list + stats + **getById**
+  (getById 漏失效 = 编辑表单读到旧缓存,有回归测试守护:`src/lib/crud/invalidate.test.ts`)
 
 ---
 
@@ -176,6 +176,7 @@ UI 态(分页/排序/选中/dialog open)放在模块私有 zustand store,**用 u
 - **单一事实来源**: 列定义、状态码、错误码都用 const 常量或类型推导
 - **避免过度封装**: 4 个 CRUD hook 已是上限,新需求先在模块内实现,跨 3+ 模块复用才抽
 - **细节差异保留**: 不抽 `<CrudPage>`/`<CrudToolbar>` 等 UI 通用组件,模块视觉细节差异大,抽出来反而失真
+- **详情字段顺序**: `<module>-detail.tsx` 里创建时间/更新时间必须放在详情字段的**最后**显示(标杆: community)
 
 ---
 
@@ -195,9 +196,12 @@ node_modules/.bin/tsc --noEmit -p tsconfig.json
 
 # 2. lint(只看本次涉及目录)
 node_modules/.bin/next lint --quiet --dir <本次修改的目录>
+
+# 3. 单测(改动 CRUD / 表单 / 状态逻辑必跑;失败 = bug 未修完)
+pnpm test
 ```
 
-提交前两条必须 exit 0。
+提交前两条必须 exit 0(测试 3 条无失败用例)。
 
 ### Commit 规范
 
@@ -243,6 +247,7 @@ pnpm build                              # 生产构建
 # 检查
 node_modules/.bin/tsc --noEmit -p tsconfig.json      # 类型检查
 node_modules/.bin/next lint --quiet --dir <dir>     # lint 指定目录
+pnpm test                                           # 单测/回归(vitest)
 
 # 数据库
 pnpm db:generate                        # prisma generate

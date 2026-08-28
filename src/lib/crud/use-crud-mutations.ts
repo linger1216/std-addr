@@ -38,7 +38,8 @@
  *   - 4 个 mutation(create/update/delete/deleteMany)全部必填 —— useMutation 是 Hook,
  *     Rules of Hooks 要求无条件、按固定顺序调用,不能在 useMemo/useEffect 里包一层,
  *     所以这里直接在顶层调用。缺少 procedure 的模块请传完整的 4 个。
- *   - invalidateKeys 字符串数组,内部调 utils[ns].list.invalidate() + stats.invalidate()
+ *   - invalidateKeys 字符串数组,内部调 utils[ns] 的 list/stats/getById invalidate()
+ *     (详见 lib/crud/invalidate.ts —— getById 必须参与失效,否则编辑表单读到旧缓存)
  *   - hooks.onAfterXxx 是可选副作用,通常是关闭 dialog / clearSelection / cancelDelete
  *   - 错误统一走 toApiError + toast.error(可通过 onError 全局覆盖)
  *   - 不锁死 create input 形状,完全交由 tRPC 推断(泛型守门)
@@ -51,6 +52,7 @@
 import { toast } from "sonner";
 
 import { toApiError } from "@/lib/api/error";
+import { invalidateAll } from "./invalidate";
 
 /** 复用 tRPC 的 utils.invalidate 形态(规避硬绑 router 类型) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/consistent-indexed-object-style
@@ -112,20 +114,6 @@ const DEFAULT_MESSAGES = {
 /** 默认错误处理 */
 function defaultOnError(e: unknown) {
   toast.error(toApiError(e).message);
-}
-
-/** 失效 list + stats(约定所有 CRUD 模块都有这两个 procedure) */
-async function invalidateAll(utils: MinimalUtils, keys: string[]) {
-  await Promise.all(
-    keys.flatMap((ns) => {
-      const nsUtils = utils[ns];
-      if (!nsUtils) return [];
-      const ops: Array<Promise<unknown>> = [];
-      if (nsUtils.list?.invalidate) ops.push(nsUtils.list.invalidate());
-      if (nsUtils.stats?.invalidate) ops.push(nsUtils.stats.invalidate());
-      return ops;
-    }),
-  );
 }
 
 export function useCrudMutations(opts: UseCrudMutationsOptions) {

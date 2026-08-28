@@ -5,7 +5,7 @@
 
 // ─── 展示层 ────────────────────────────────────────────
 
-/** 空值占位符:列表/详情里 null|undefined 显示这个 */
+/** 空值占位符:列表/详情里 null|undefined 统一显示 —(与各模块详情页既有展示一致) */
 export const PLACEHOLDER_EMPTY = "-";
 
 /** 分页每页可选条数 */
@@ -19,6 +19,14 @@ export function orEmpty(value: string | null | undefined): string {
 /** 统一提取 Error 信息(避免到处 err instanceof Error) */
 export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 区划 ID 归一:""(= 表单"未指定")/ undefined → null(清空);其它 → 原样。
+ * 注意不能用 ?? / ||:空串是合法的"未指定"语义,必须被转成 null。
+ */
+export function toRegionIdOrNull(v: string | undefined): string | null {
+  return v === undefined || v === "" ? null : v;
 }
 
 // ─── 业务层:通用状态 ───────────────────────────────────

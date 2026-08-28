@@ -1,5 +1,5 @@
-import { VillageClient } from "@/components/modules/village/village-client";
+import { VillagePage } from "@/components/modules/village/village-page";
 
 export default function KnowledgeVillagePage() {
-  return <VillageClient />;
+  return <VillagePage />;
 }

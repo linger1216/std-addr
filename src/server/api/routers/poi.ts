@@ -5,85 +5,173 @@ import {
   adminProcedure,
   createTRPCRouter,
 } from "@/server/api/trpc";
+import { optionalRegionIdSchema } from "@/lib/validators/community";
+import { toErrorMessage, toRegionIdOrNull } from "@/lib/constants";
+import { parseAliasEntries } from "@/lib/alias-entries";
+import { parseAddressEntries } from "@/lib/format";
 
 const statusSchema = z.union([z.literal(0), z.literal(1)]);
 
-/** JSON 字段:address 接收任意可序列化值,服务端不做结构验证。geom 暂不在 schema 中 */
-const jsonValueSchema = z
+/**
+ * alias 接收多种形态:字符串(单值)、字符串数组(多值)、JSON 字符串。
+ * router 内部用 parseAliasEntries 归一,落库为字符串数组或 NULL。
+ */
+const aliasInputSchema = z
+  .union([z.string(), z.array(z.string().trim().min(1).max(100))])
+  .optional();
+
+/**
+ * address 接收多种形态:字符串数组(地址列表)、任意 JSON(兼容旧自由格式)。
+ * 落库统一为数组或 NULL(旧对象数据由前端解析归一)。
+ */
+const addressInputSchema = z
   .union([
+    z.array(z.string().trim().min(1).max(200)),
     z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(z.unknown()),
     z.record(z.unknown()),
   ])
   .optional();
 
 const poiCreateInput = z.object({
-  name: z.string().min(1).max(100),
-  type: z.string().max(50).optional(),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
-  address: jsonValueSchema,
+  name: z.string().trim().min(1).max(100),
+  type: z.string().trim().max(50).optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
+  address: addressInputSchema,
   // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持;暂不在 schema 里
   status: statusSchema.default(1),
 });
 
 const poiUpdateInput = z.object({
   id: z.string(),
-  name: z.string().min(1).max(100).optional(),
-  type: z.string().max(50).optional(),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
-  address: jsonValueSchema,
+  name: z.string().trim().min(1).max(100).optional(),
+  type: z.string().trim().max(50).optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
+  address: addressInputSchema,
   // geom: 同上
   status: statusSchema.optional(),
 });
 
 const poiImportRow = z.object({
   name: z.string().min(1).max(100),
-  type: z.string().max(50).optional(),
-  alias: z.string().max(100).optional(),
-  regionId: z.string().cuid().optional(),
+  type: z.string().trim().max(50).optional(),
+  alias: aliasInputSchema,
+  regionId: optionalRegionIdSchema,
+  address: addressInputSchema,
   status: statusSchema.optional(),
 });
+
+/**
+ * alias(JSON 列)归一 —— 多值数组形式(对齐 community/village)。
+ * undefined / 空数组 / 元素全空 → JsonNull;否则 → 字符串数组。
+ */
+function toNullableAlias(
+  v: string | string[] | undefined,
+): string[] | typeof Prisma.JsonNull {
+  const list = parseAliasEntries(v);
+  if (list.length === 0) return Prisma.JsonNull;
+  return list;
+}
+
+/**
+ * address(JSON 列)归一 —— 地址列表形式。
+ * undefined / 空数组 → JsonNull;否则 → 字符串数组。
+ * (旧自由对象数据兼容读入,写入统一为数组。)
+ */
+function toNullableAddress(
+  v: string[] | string | Record<string, unknown> | undefined,
+): string[] | typeof Prisma.JsonNull {
+  const list = parseAddressEntries(v);
+  if (list.length === 0) return Prisma.JsonNull;
+  return list;
+}
 
 type PoiWithRegion = Prisma.PoiGetPayload<{
   include: { region: { select: { id: true; name: true } } };
 }>;
 
-export const poiRouter = createTRPCRouter({
-  /** 分页 + 搜索 + 类型/状态/区域 筛选 */
-  list: adminProcedure
-    .input(
+/** 可排序列白名单 */
+const poiSortFields = [
+  "name",
+  "type",
+  "alias",
+  "regionName",
+  "status",
+  "createdAt",
+] as const;
+
+const listInput = z.object({
+  page: z.number().int().min(1).default(1),
+  pageSize: z.number().int().min(1).max(200).default(20),
+  q: z.string().trim().optional(),
+  regionId: z.string().optional(),
+  type: z.string().trim().optional(),
+  status: statusSchema.optional(),
+  sort: z
+    .array(
       z.object({
-        page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(200).default(20),
-        q: z.string().trim().optional(),
-        regionId: z.string().optional(),
-        type: z.string().trim().optional(),
-        status: statusSchema.optional(),
+        id: z.enum(poiSortFields),
+        desc: z.boolean().default(false),
       }),
     )
-    .query(async ({ ctx, input }) => {
-      const where: Prisma.PoiWhereInput = {};
-      if (input.q) {
-        where.OR = [
-          { name: { contains: input.q } },
-          { alias: { contains: input.q } },
-        ];
+    .max(3)
+    .optional(),
+});
+
+type FilterInput = Pick<
+  z.infer<typeof listInput>,
+  "q" | "regionId" | "type" | "status"
+>;
+
+function buildWhere(input: FilterInput): Prisma.PoiWhereInput {
+  const where: Prisma.PoiWhereInput = {};
+  if (input.q) {
+    where.OR = [
+      { name: { contains: input.q } },
+      // alias 是 JSON 列,字符串匹配要用 string_contains
+      { alias: { string_contains: input.q } },
+    ];
+  }
+  if (input.type) where.type = { contains: input.type };
+  if (input.regionId) where.regionId = input.regionId;
+  if (input.status !== undefined) where.status = input.status;
+  return where;
+}
+
+function buildOrderBy(
+  sort: z.infer<typeof listInput>["sort"],
+): Prisma.PoiOrderByWithRelationInput[] {
+  const orderBy: Prisma.PoiOrderByWithRelationInput[] = [];
+  if (sort && sort.length > 0) {
+    for (const s of sort) {
+      const dir = s.desc ? "desc" : "asc";
+      if (s.id === "regionName") {
+        orderBy.push({ region: { name: dir } });
+      } else {
+        orderBy.push({ [s.id]: dir });
       }
-      if (input.type) where.type = { contains: input.type };
-      if (input.regionId) where.regionId = input.regionId;
-      if (input.status !== undefined) where.status = input.status;
+    }
+  } else {
+    orderBy.push({ status: "desc" }, { createdAt: "desc" });
+  }
+  return orderBy;
+}
+
+export const poiRouter = createTRPCRouter({
+  /** 分页 + 搜索 + 类型/状态/区域 筛选 + 排序 */
+  list: adminProcedure
+    .input(listInput)
+    .query(async ({ ctx, input }) => {
+      const where = buildWhere(input);
+      const orderBy = buildOrderBy(input.sort);
 
       const [total, rows] = await Promise.all([
         ctx.db.poi.count({ where }),
         ctx.db.poi.findMany({
           where,
           include: { region: { select: { id: true, name: true } } },
-          orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+          orderBy,
           skip: (input.page - 1) * input.pageSize,
           take: input.pageSize,
         }),
@@ -96,6 +184,7 @@ export const poiRouter = createTRPCRouter({
         alias: row.alias,
         regionId: row.regionId,
         regionName: row.region?.name ?? null,
+        address: row.address,
         status: row.status,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -155,12 +244,12 @@ export const poiRouter = createTRPCRouter({
         data: {
           name: input.name,
           type: input.type ?? null,
-          alias: input.alias ?? null,
-          regionId: input.regionId ?? null,
-          address:
-            input.address === undefined || input.address === null
-              ? Prisma.JsonNull
-              : (input.address as Prisma.InputJsonValue),
+          // alias 多值数组;空 → JsonNull
+          alias: toNullableAlias(input.alias),
+          // ""(未指定)/ undefined → null;合法 region id → 原样
+          regionId: toRegionIdOrNull(input.regionId),
+          // address 地址列表;空 → JsonNull
+          address: toNullableAddress(input.address),
           // geom: DDL 是 GEOMCOLLECTION,Prisma 不支持写入;暂不写
           status: input.status,
           createdAt: new Date(),
@@ -174,14 +263,11 @@ export const poiRouter = createTRPCRouter({
       const data: Prisma.PoiUncheckedUpdateInput = {};
       if (input.name !== undefined) data.name = input.name;
       if (input.type !== undefined) data.type = input.type;
-      if (input.alias !== undefined) data.alias = input.alias;
-      if (input.regionId !== undefined) data.regionId = input.regionId;
-      if (input.address !== undefined) {
-        data.address =
-          input.address === null
-            ? Prisma.JsonNull
-            : (input.address as Prisma.InputJsonValue);
-      }
+      // alias 是 JSON 数组:undefined = 不动,空数组 → JsonNull,非空 → 数组
+      if (input.alias !== undefined) data.alias = toNullableAlias(input.alias);
+      if (input.regionId !== undefined) data.regionId = toRegionIdOrNull(input.regionId);
+      // address 地址列表:undefined = 不动,空 → JsonNull
+      if (input.address !== undefined) data.address = toNullableAddress(input.address);
       // geom: 同上,不在 update 中处理
       if (input.status !== undefined) data.status = input.status;
       return ctx.db.poi.update({
@@ -213,19 +299,11 @@ export const poiRouter = createTRPCRouter({
         q: z.string().trim().optional(),
         regionId: z.string().optional(),
         status: statusSchema.optional(),
+        sort: listInput.shape.sort,
       }),
     )
     .query(async ({ ctx, input }) => {
-      const where: Prisma.PoiWhereInput = {};
-      if (input.q) {
-        where.OR = [
-          { name: { contains: input.q } },
-          { alias: { contains: input.q } },
-        ];
-      }
-      if (input.regionId) where.regionId = input.regionId;
-      if (input.status !== undefined) where.status = input.status;
-
+      const where = buildWhere(input);
       const rows = await ctx.db.poi.findMany({
         where,
         select: {
@@ -238,7 +316,7 @@ export const poiRouter = createTRPCRouter({
           createdAt: true,
           region: { select: { name: true } },
         },
-        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+        orderBy: buildOrderBy(input.sort),
       });
       return rows.map((row) => ({
         id: row.id,
@@ -270,18 +348,17 @@ export const poiRouter = createTRPCRouter({
             data: {
               name: row.name,
               type: row.type ?? null,
-              alias: row.alias ?? null,
-              regionId: row.regionId ?? null,
+              alias: toNullableAlias(row.alias),
+              // ""(未指定)/ undefined → null
+              regionId: toRegionIdOrNull(row.regionId),
+              address: toNullableAddress(row.address),
               status: row.status ?? 1,
               createdAt: new Date(),
             },
           });
           created++;
         } catch (err) {
-          errors.push({
-            index: i,
-            message: err instanceof Error ? err.message : String(err),
-          });
+          errors.push({ index: i, message: toErrorMessage(err) });
         }
       }
 

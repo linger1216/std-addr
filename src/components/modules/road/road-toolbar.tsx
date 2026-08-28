@@ -1,19 +1,20 @@
 "use client";
 
+import { AnimatePresence, motion } from "motion/react";
 import {
   Download,
-  Upload,
   Plus,
   RotateCcw,
   Search,
   SearchIcon,
   Trash2,
+  Upload,
+  X,
 } from "lucide-react";
 
 import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
-
 import { useRoadQueryParams } from "./use-road-query-params";
 
 export function RoadToolbar({
@@ -29,16 +30,16 @@ export function RoadToolbar({
   onExport: () => void;
   onBatchDelete: () => void;
 }) {
-  // ponytail: 查询参数 state 由 useRoadQueryParams(zustand) 管理
   const draft = useRoadQueryParams((s) => s.draft);
   const patchDraft = useRoadQueryParams((s) => s.patchDraft);
   const commit = useRoadQueryParams((s) => s.commit);
   const reset = useRoadQueryParams((s) => s.reset);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3">
       <div className="flex flex-1 flex-wrap items-center gap-2">
-        <div className="relative w-[280px]">
+        {/* 关键字搜索 */}
+        <div className="relative w-70">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={draft.q}
@@ -47,13 +48,38 @@ export function RoadToolbar({
               if (e.key === "Enter") commit();
             }}
             placeholder="搜索道路名"
-            className="h-8 border-transparent bg-secondary pl-8 pr-3 text-[13px]"
+            className="h-8 border-transparent pl-8 pr-7 text-[13px]"
           />
+          {/* 清空按钮:仅在有内容时显示,只清 draft 不 commit */}
+          <AnimatePresence>
+            {draft.q && (
+              <motion.button
+                type="button"
+                aria-label="清空搜索"
+                title="清空搜索"
+                onClick={() => patchDraft({ q: "" })}
+                onMouseDown={(e) => e.preventDefault()}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.12 }}
+                className="pointer-events-auto absolute top-1/2 right-2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full
+                text-muted-foreground transition-colors
+                hover:bg-secondary hover:text-foreground
+                focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <X className="size-3" />
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
 
+        {/* 状态筛选 */}
         <SearchSelect<string>
           value={draft.status}
-          onValueChange={(v) => patchDraft({ status: v ?? "" })}
+          onValueChange={(v) =>
+            patchDraft({ status: v === "1" || v === "0" ? v : "" })
+          }
           options={[
             { value: "", label: "全部状态" },
             { value: "1", label: "启用" },
@@ -63,7 +89,7 @@ export function RoadToolbar({
           triggerClassName="min-w-40"
         />
 
-        <Button variant="ghost" size="sm" onClick={reset}>
+        <Button variant="outline" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
           重置
         </Button>
@@ -80,10 +106,10 @@ export function RoadToolbar({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 justify-end">
         {selectedCount > 0 && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={onBatchDelete}
             className="text-danger hover:bg-danger-soft"

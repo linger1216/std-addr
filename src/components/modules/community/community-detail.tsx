@@ -7,10 +7,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { JsonBlock } from "@/components/ui/json-block";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { formatDateTime } from "@/lib/format";
+import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
+import { formatDateTime, parseAddressEntries } from "@/lib/format";
+import { parseAliasEntries } from "@/lib/alias-entries";
 import type { CommunityDetail } from "./community-form";
 
 /** 详情字段 = getById 输出(单一事实来源:community-form.tsx,已含 region) */
@@ -49,21 +50,62 @@ export function CommunityDetailDialog({
         {detail ? (
           <div className="divide-y divide-border/60">
             <Row label="名称">{detail.name}</Row>
-            <Row label="别名">{detail.alias ?? "—"}</Row>
-            <Row label="所属区划">{detail.region?.name ?? "—"}</Row>
+            <Row label="别名">
+              {/* alias 是 JSON 数组,不展示原始格式:解析后按 1-N 条渲染 */}
+              <AliasEntries value={detail.alias} />
+            </Row>
+            <Row label="所属区划">{orEmpty(detail.region?.name)}</Row>
             <Row label="状态">
               <StatusBadge status={detail.status} />
             </Row>
+            <Row label="地址">
+              {/* 地址是 JSON,不展示原始格式:解析后按 1-N 条渲染 */}
+              <AddressEntries value={detail.address} />
+            </Row>
+            {/* 创建/更新时间约定放字段最后,见 CLAUDE.md §7 */}
             <Row label="创建时间">{formatDateTime(detail.createdAt)}</Row>
             <Row label="更新时间">{formatDateTime(detail.updatedAt)}</Row>
-            <Row label="地址 (JSON)">
-              <JsonBlock value={detail.address} />
-            </Row>
           </div>
         ) : (
           <p className="text-[13px] text-muted-foreground">未选择小区。</p>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 别名条目:解析 JSON 后逐条展示;无内容显示空值占位符 */
+function AliasEntries({ value }: { value: unknown }) {
+  const lines = parseAliasEntries(value);
+  if (lines.length === 0) {
+    return <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
+  }
+  return (
+    <ul className="space-y-1">
+      {lines.map((line, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <span className="mt-px shrink-0 text-muted-foreground">{i + 1}.</span>
+          <span>{line}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** 地址条目:解析 JSON 后逐条展示;无内容显示空值占位符 */
+function AddressEntries({ value }: { value: unknown }) {
+  const lines = parseAddressEntries(value);
+  if (lines.length === 0) {
+    return <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
+  }
+  return (
+    <ul className="space-y-1">
+      {lines.map((line, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <span className="mt-px shrink-0 text-muted-foreground">{i + 1}.</span>
+          <span>{line}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

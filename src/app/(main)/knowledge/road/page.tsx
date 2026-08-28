@@ -1,5 +1,5 @@
-import { RoadClient } from "@/components/modules/road/road-client";
+import { RoadPage } from "@/components/modules/road/road-page";
 
 export default function KnowledgeRoadPage() {
-  return <RoadClient />;
+  return <RoadPage />;
 }
