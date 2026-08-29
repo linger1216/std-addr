@@ -145,7 +145,7 @@ model Region {
     @@index([level])
     @@index([status])
     @@index([name])
-    @@map("regions")
+    @@map("region")
 }
 
 model Community {
@@ -168,7 +168,7 @@ model Community {
 
     @@index([regionId])
     @@index([status])
-    @@map("communities")
+    @@map("community")
 }
 
 model Village {
@@ -197,7 +197,7 @@ model Road {
     updatedAt DateTime? @updatedAt @map("updated_at")
 
     @@index([status])
-    @@map("roads")
+    @@map("road")
 }
 
 model Poi {
@@ -220,5 +220,41 @@ model Poi {
     @@index([regionId])
     @@index([type])
     @@index([status])
-    @@map("pois")
+    @@map("poi")
+}
+
+// ─── 知识库 / 地址要素 ──────────────────────────────
+// 地址组件要素字典(省份/城市/区县/街道/路/小区 ...)
+// 对齐 community/village 模板:对齐 label 表(单数)
+model Label {
+    id        String   @id @default(cuid())
+    name      String   @unique
+    label     String?
+    status    Int      @default(1)
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@index([status])
+    @@map("label")
+}
+
+// ─── 地址模拟 / 数据模拟规则 ─────────────────────────
+// 模拟地址生成规则(对应 DB 表 label_mock_rule,已建)。
+// rule 列是 JSON:有序步骤数组,每步三类数据来源三选一
+// (randomValue / randomNumber / randomChinese)+ prefix/suffix/skipRate。
+// radio 列:占比(1~100,可空)—— 从数据提取时按出现次数占比写入,
+// 生成地址时作为该规则的初始化比例。
+model AddressMockRule {
+    id        String   @id @default(cuid())
+    name      String   @map("name")
+    // 步骤数组 JSON(空规则用 null)
+    rule      Json?    @map("rule")
+    // 占比 1~100(可空 = 未设置,生成时兜底均分)
+    radio     Int?     @map("radio")
+    status    Int      @default(1)
+    createdAt DateTime @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@index([status])
+    @@map("label_mock_rule")
 }

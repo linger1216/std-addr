@@ -1,5 +1,6 @@
 import { communityRouter } from "@/server/api/routers/community";
 import { dashboardRouter } from "@/server/api/routers/dashboard";
+import { labelRouter } from "@/server/api/routers/label";
 import { poiRouter } from "@/server/api/routers/poi";
 import { roadRouter } from "@/server/api/routers/road";
 import { villageRouter } from "@/server/api/routers/village";
@@ -8,6 +9,7 @@ import { postRouter } from "@/server/api/routers/post";
 import { roleRouter } from "@/server/api/routers/role";
 import { userRouter } from "@/server/api/routers/user";
 import { regionRouter } from "@/server/api/routers/region";
+import { addrSimRouter } from "@/server/api/routers/addr-sim";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
 /**
@@ -26,6 +28,8 @@ export const appRouter = createTRPCRouter({
   road: roadRouter,
   poi: poiRouter,
   region: regionRouter,
+  label: labelRouter,
+  addrSim: addrSimRouter,
 });
 
 // export type definition of API

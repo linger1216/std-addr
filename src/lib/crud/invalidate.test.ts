@@ -48,4 +48,40 @@ describe("invalidateAll(CRUD 修改成功后查询失效集)", () => {
     await invalidateAll({}, ["no-such-module"]);
     expect(invalidate).not.toHaveBeenCalled();
   });
+
+  it("非标准查询名(如 addrSim.ruleList)→ 顶层 invalidate 全量失效", async () => {
+    // 回归:addr-sim 模块的查询叫 ruleList/ruleGet/labels,不是 list/stats/getById,
+    // 必须调用命名空间顶层 invalidate() 保证列表刷新。
+    const invalidate = vi.fn(() => Promise.resolve(undefined));
+    const utils: UtilsShape = {
+      addrSim: {
+        invalidate,
+      },
+    };
+
+    await invalidateAll(utils, ["addrSim"]);
+
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("真实 tRPC proxy:顶层 invalidate 优先,不再逐 procedure(防漏 ruleList)", async () => {
+    // 踩坑回归:tRPC v11 的 proxy 会给任意属性(utils.addrSim.list)都造出可调用函数,
+    // 逐 procedure 判空永远非空,但失效的是不存在的 key(no-op)→ ruleList 永不刷新。
+    // 只要顶层 invalidate 存在,一律只走顶层(全量覆盖)。
+    const topInvalidate = vi.fn(() => Promise.resolve(undefined));
+    const listInvalidate = vi.fn(() => Promise.resolve(undefined));
+    const utils: UtilsShape = {
+      addrSim: {
+        list: { invalidate: listInvalidate },
+        stats: { invalidate: vi.fn(() => Promise.resolve(undefined)) },
+        getById: { invalidate: vi.fn(() => Promise.resolve(undefined)) },
+        invalidate: topInvalidate,
+      },
+    };
+
+    await invalidateAll(utils, ["addrSim"]);
+
+    expect(topInvalidate).toHaveBeenCalledTimes(1);
+    expect(listInvalidate).not.toHaveBeenCalled();
+  });
 });
