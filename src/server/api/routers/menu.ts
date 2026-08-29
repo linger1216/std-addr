@@ -34,7 +34,7 @@ export const menuRouter = createTRPCRouter({
       include: { role: { include: { menus: { include: { menu: true } } } } },
     });
 
-    const roleMenus = user?.role?.menus.map((m) => m.menu) ?? [];
+    const roleMenus = user?.role?.menus.map((m) => m.menu).filter(Boolean) ?? [];
     return buildTree(roleMenus);
   }),
 
@@ -125,5 +125,8 @@ async function deleteMenuTree(db: PrismaClient, id: string) {
   for (const c of children) {
     await deleteMenuTree(db, c.id);
   }
+  // menu_role 表在 DB 层没有 FK(也没有 onDelete: Cascade 的实际生效),
+  // 显式清理以免出现 dangling 引用,导致 getTree 触发 null 访问报错。
+  await db.menuRole.deleteMany({ where: { menuId: id } });
   await db.menu.delete({ where: { id } });
 }

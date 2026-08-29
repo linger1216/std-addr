@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  BookMarked,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -33,6 +34,7 @@ const iconMap: Record<string, LucideIcon> = {
   map: Map,
   trees: Trees,
   "tree-pine": TreePine,
+  "book-marked": BookMarked,
   home: Home,
   waypoints: Waypoints,
   "map-pin": MapPin,

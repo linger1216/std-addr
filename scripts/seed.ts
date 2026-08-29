@@ -28,6 +28,7 @@ const MENUS = [
       { name: "兴趣点", path: "/knowledge/poi", icon: "map-pin", sort: 3 },
       { name: "道路", path: "/knowledge/road", icon: "waypoints", sort: 4 },
       { name: "行政区划", path: "/knowledge/region", icon: "tree-pine", sort: 5 },
+      { name: "地址要素", path: "/knowledge/label", icon: "book-marked", sort: 6 },
     ],
   },
   { name: "地址模拟", path: "/addr-sim", icon: "waypoints", sort: 4, children: [] },
