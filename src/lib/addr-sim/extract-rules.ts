@@ -77,7 +77,8 @@ const CN_DIGITS = "零一二三四五六七八九十百千万两";
  * 返回提取出的纯数字串;不匹配返回 null。
  */
 export function extractArabicDigits(text: string): string | null {
-  const m = /^(\d+)[号楼层栋室单元组队巷弄座幢排门房间户]*$/.exec(text.trim());
+  // 后缀字符集与 NUMERIC_SUFFIX 常量保持一致(单一事实来源)
+  const m = new RegExp(`^(\\d+)[${NUMERIC_SUFFIX}]*$`).exec(text.trim());
   return m ? m[1]! : null;
 }
 
@@ -96,17 +97,6 @@ function buildLabelLookup(
   const m = new Map<string, string>();
   for (const l of labels) m.set(l.label, l.name);
   return m;
-}
-
-/**
- * 计算规则占比(1~100):count / total 的百分比,四舍五入后 clamp 到 [1, 100]。
- * 用于导入时把规则出现次数占比写入 label_mock_rule.radio,
- * 生成地址时该占比作为规则初始化比例。
- */
-export function computeRadio(count: number, total: number): number {
-  if (!Number.isFinite(total) || total <= 0) return 100;
-  if (count <= 0) return 1;
-  return Math.max(1, Math.min(100, Math.round((count / total) * 100)));
 }
 
 /**
@@ -172,8 +162,7 @@ function buildStepForLabel(
   }
 
   // 2. 数字识别(所有值同形态才按数字处理)
-  if (values.length > 0) {
-    const digits = values.map(extractArabicDigits);
+  const digits = values.map(extractArabicDigits);
     const allArabic = digits.every((d) => d !== null);
     if (allArabic) {
       const lens = digits
@@ -205,11 +194,8 @@ function buildStepForLabel(
         skipRate: 0,
       };
     }
-    // 3. 自定义列表:无条数上限,值去重后全部写入 customValue.list
-    if (values.length > 0) {
-      return { name: label, customValue: { list: values }, skipRate: 0 };
-    }
-  }
+    // 3. 自定义列表:值去重后全部写入 customValue.list
+    return { name: label, customValue: { list: values }, skipRate: 0 };
 
   // 4. 兜底:road 占位(值太多放弃自定义;后续用户可手动调整)
   return { name: label, randomValue: { name: "road" }, skipRate: 0 };
@@ -229,16 +215,17 @@ export function extractRules(
     opts.entitySourceNames ?? addrSimSourceNames,
   );
 
-  // 第一遍:收集每个已知 label 出现过的值(去重保序)+ 每条 record 的 label 序列(顺序)
+  // 第一遍:收集每个已知 label 出现过的值(去重保序)+ 每条 record 的 label 序列(顺序)+ 该 record 涉及的未知 label
   const valueMap = new Map<string, string[]>(); // label.label → 去重值列表
   const recordLabels: string[][] = [];
-  const unknownAll = new Set<string>();
+  const recordUnknowns: string[][] = []; // 与 recordLabels 平行
 
   for (const record of records) {
     const annotation = record.annotations?.[0];
     if (!annotation) continue;
 
     const labels: string[] = [];
+    const unknownHere: string[] = [];
     for (const r of annotation.result ?? []) {
       const lbls = r.value?.labels;
       if (!Array.isArray(lbls)) continue;
@@ -246,7 +233,7 @@ export function extractRules(
         if (typeof label !== "string") continue;
         const name = lookup.get(label);
         if (!name) {
-          unknownAll.add(label);
+          unknownHere.push(label);
           continue;
         }
         labels.push(label);
@@ -259,7 +246,10 @@ export function extractRules(
         valueMap.set(label, list);
       }
     }
-    if (labels.length > 0) recordLabels.push(labels);
+    if (labels.length > 0) {
+      recordLabels.push(labels);
+      recordUnknowns.push(unknownHere);
+    }
   }
 
   // 第二遍:为每个 label 生成步骤模板(同 label 全局同一来源)
@@ -277,7 +267,9 @@ export function extractRules(
   }
   const groups = new Map<string, Group>();
 
-  for (const labels of recordLabels) {
+  for (let i = 0; i < recordLabels.length; i++) {
+    const labels = recordLabels[i]!;
+    const unknownHere = recordUnknowns[i] ?? [];
     const steps = labels.map((l) => {
       const tpl = stepTemplates.get(l);
       // 防御:从未收集到值的 label(理论不会走到,因为收集遍历覆盖所有已知 label)
@@ -291,11 +283,12 @@ export function extractRules(
     const existing = groups.get(key);
     if (existing) {
       existing.count += 1;
+      for (const u of unknownHere) existing.unknownLabels.add(u);
     } else {
       groups.set(key, {
         steps,
         count: 1,
-        unknownLabels: new Set<string>(),
+        unknownLabels: new Set(unknownHere),
       });
     }
   }
@@ -305,7 +298,7 @@ export function extractRules(
       name: key.split("||").join("-") || "提取规则",
       steps: g.steps,
       count: g.count,
-      unknownLabels: Array.from(unknownAll),
+      unknownLabels: Array.from(g.unknownLabels),
     }))
     .sort(
       (a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-Hans-CN"),
@@ -323,14 +316,17 @@ export interface ExtractSummary {
   unknownLabels: string[];
 }
 
+/**
+ * 解析统计:每条规则的 unknownLabels 已由 extractRules 绑定到具体 record,
+ * 这里只做"所有规则的未知 label 并集(insertion 顺序)"。
+ */
 export function summarizeExtraction(
   rawJson: unknown,
-  opts: ExtractOptions,
+  _opts: ExtractOptions,
   rules: ExtractedRule[],
 ): ExtractSummary {
-  const records = normalizeRecords(rawJson);
   return {
-    totalRecords: records.length,
+    totalRecords: normalizeRecords(rawJson).length,
     ruleCount: rules.length,
     unknownLabels: rules.reduce<string[]>(
       (acc, r) => {

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   extractRules,
   summarizeExtraction,
-  computeRadio,
   computeRadios,
   extractArabicDigits,
   isChineseNumeric,
@@ -319,6 +318,24 @@ describe("unknownLabels 字段", () => {
     const summary = summarizeExtraction(json, opts, rules);
     expect(summary.unknownLabels.sort()).toEqual(["未知A", "未知B", "未知C"]);
   });
+
+  it("不同规则各自的 unknownLabels 互不串扰(修复:全局并集 → 按 record 绑定)", () => {
+    // 两条不同规则:规则1 有未知A,规则2 有未知B —— 各自 unknownLabels 不能互相包含
+    const json = [
+      record([["城市", "路", "未知A"]]),
+      record([["村", "未知B", "路号"]]),
+      record([["村", "路号"]]), // 规则2 的第三条样本(无未知)合并进规则2
+    ];
+    const rules = extractRules(json, opts);
+    expect(rules).toHaveLength(2);
+    const rule1 = rules.find((r) => r.name === "城市-路")!;
+    const rule2 = rules.find((r) => r.name === "村-路号")!;
+    // 回归:旧实现每个 group 都带 unknownAll(全局),规则1 会错误包含规则2 的未知B
+    expect(rule1.unknownLabels).toEqual(["未知A"]);
+    expect(rule2.unknownLabels).toEqual(["未知B"]);
+    // 规则2 的第三条样本无未知 → 合并后不引入额外未知
+    expect(rule2.count).toBe(2);
+  });
 });
 describe("精细化数据来源推导", () => {
   it("实体表优先:值即使全数字也走实体表", () => {
@@ -444,26 +461,3 @@ describe("computeRadios 批量占比(最大余数法,合计恒 100)", () => {
   });
 });
 
-describe("computeRadio 规则占比计算", () => {
-  it("整数占比", () => {
-    expect(computeRadio(10, 100)).toBe(10);
-    expect(computeRadio(30, 100)).toBe(30);
-    expect(computeRadio(50, 200)).toBe(25);
-  });
-
-  it("非整除 → 四舍五入", () => {
-    expect(computeRadio(1, 3)).toBe(33); // 33.33 → 33
-    expect(computeRadio(2, 3)).toBe(67); // 66.67 → 67
-  });
-
-  it("边界 clamp 1~100", () => {
-    expect(computeRadio(100, 100)).toBe(100);
-    expect(computeRadio(1, 1000)).toBe(1); // 0.1 → clamp 1
-    expect(computeRadio(0, 100)).toBe(1); // 0 次 → clamp 1
-  });
-
-  it("total 非法(0 / NaN)→ 100", () => {
-    expect(computeRadio(5, 0)).toBe(100);
-    expect(computeRadio(5, Number.NaN)).toBe(100);
-  });
-});

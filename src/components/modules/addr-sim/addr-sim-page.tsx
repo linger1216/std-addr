@@ -7,22 +7,12 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Reveal } from "@/components/ui/reveal";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 import { useCrudMutations } from "@/lib/crud/use-crud-mutations";
-import {
-  type AddrSimStep,
-} from "@/lib/validators/addr-sim";
 import type { CandidatePool } from "@/lib/addr-sim/generator";
+import { toRuleRows } from "@/lib/addr-sim/rule-mappers";
 
 import { api } from "@/trpc/react";
 
@@ -31,6 +21,7 @@ import { AddrSimGenerateCard } from "./addr-sim-generate-card";
 import { AddrSimRuleEditor, type AddrSimRuleRow } from "./addr-sim-rule-editor";
 import { AddrSimRuleList } from "./addr-sim-rule-list";
 import { AddrSimImportDialog } from "./addr-sim-import-dialog";
+import { useRuleActions } from "./hooks/use-rule-actions";
 import {
   useAddrSimActions,
   useAddrSimRuleState,
@@ -94,15 +85,7 @@ export function AddrSimPage() {
   const [importOpen, setImportOpen] = useState(false);
 
   const rules: AddrSimRuleRow[] = useMemo(
-    () =>
-      (ruleList ?? []).map((r) => ({
-        id: r.id,
-        name: r.name,
-        steps: (Array.isArray(r.steps) ? r.steps : []) as AddrSimStep[],
-        radio: r.radio,
-        status: r.status === 0 ? 0 : 1,
-        updatedAt: r.updatedAt ? String(r.updatedAt) : null,
-      })),
+    () => toRuleRows(ruleList ?? []),
     [ruleList],
   );
 
@@ -113,88 +96,14 @@ export function AddrSimPage() {
     );
   }, [rules, actions]);
 
-  // —— 保存(create / update)——
-  function handleSave(payload: {
-    name: string;
-    steps: AddrSimStep[];
-    radio?: number | null;
-    status?: 0 | 1;
-  }) {
-    if (editingId) {
-      mut.update.mutate({ id: editingId, ...payload });
-    } else {
-      mut.create.mutate(payload);
-    }
-  }
-
-  /**
-   * 复制规则:名称加" (副本)",步骤深拷贝,radio 原样 —— 其余配置完全一致。
-   */
-  function handleCopy(rule: AddrSimRuleRow) {
-    mut.create.mutate({
-      name: `${rule.name} (副本)`,
-      steps: JSON.parse(JSON.stringify(rule.steps)) as AddrSimStep[],
-      radio: rule.radio ?? null,
-    });
-  }
-
-  /**
-   * "更新全局"：把当前步骤配置覆盖所有规则中同名 label 的步骤,
-   * 并按最新 steps 重新拼接规则名(规则名 = 要素1-要素2-… 设计约定)。
-   *  - 不修改当前编辑的草稿(用户在编辑器里已经看到当前步骤的最新值)
-   *  - 并行调用 update,失败汇总
-   *  - 不包括当前正在编辑的规则(editingId):编辑器草稿优先,避免冲掉用户未保存改动
-   */
-  async function handleUpdateAll(step: AddrSimStep) {
-    const targetName = step.name;
-    // 找含同名步骤的规则;每个目标规则基于新 steps 重新派生 name(要素拼接)
-    const tasks = rules
-      .filter((r) => r.id !== editingId)
-      .filter((r) => r.steps.some((s) => s.name === targetName))
-      .map((r) => {
-        const newSteps = r.steps.map((s) =>
-          s.name === targetName ? { ...step } : s,
-        );
-        return {
-          id: r.id,
-          name: newSteps.map((s) => s.name).join("-") || "提取规则",
-          steps: newSteps,
-          // 仅当派生 name 与原 name 不同(说明 step.name 变了),才视为"需要同步"
-          nameChanged:
-            newSteps.map((s) => s.name).join("-") !== r.name,
-        };
-      });
-
-    if (tasks.length === 0) {
-      toast.warning(`未找到其它规则使用 "${targetName}"`);
-      return;
-    }
-
-    let updated = 0;
-    let failed = 0;
-    await Promise.all(
-      tasks.map(async (t) => {
-        try {
-          // 不传 radio(radio 字段独立于步骤,同步时不动)
-          await mut.update.mutateAsync({ id: t.id, name: t.name, steps: t.steps });
-          updated += 1;
-        } catch {
-          failed += 1;
-        }
-      }),
-    );
-    if (updated > 0) {
-      const nameChangedCount = tasks.filter((t) => t.nameChanged).length;
-      const msg =
-        nameChangedCount > 0
-          ? `已将 "${targetName}" 同步到 ${updated} 条规则,并按要素重命名 ${nameChangedCount} 条`
-          : `已将 "${targetName}" 同步到 ${updated} 条规则`;
-      toast.success(msg + (failed > 0 ? `,${failed} 条失败` : ""));
-    }
-    if (failed > 0) {
-      toast.error("部分规则同步失败");
-    }
-  }
+  // —— 规则操作(保存/复制/全局同步/导入)——抽到 hooks/use-rule-actions
+  const ruleActions = useRuleActions({
+    rules,
+    editingId,
+    create: mut.create,
+    update: mut.update,
+    onImportDialogChange: setImportOpen,
+  });
 
   // —— 删除确认动作 ——
   function confirmDelete() {
@@ -208,46 +117,14 @@ export function AddrSimPage() {
     actions.clearSelect();
   }
 
-  // 从 Label Studio 文件提取后导入:
-  //  - 逐条调用 ruleCreate(Dialog 内实时显示进度)
-  //  - 全部完成后 invalidate 一次 + 汇总 toast + 关闭 Dialog
-  async function handleImportOne(rule: {
-    name: string;
-    steps: AddrSimStep[];
-    radio: number;
-  }) {
-    await mut.create.mutateAsync({
-      name: rule.name,
-      steps: rule.steps,
-      radio: rule.radio,
-    });
-  }
-
-  async function handleImportComplete(result: {
-    success: number;
-    failed: number;
-    total: number;
-    lastError: string | null;
-  }) {
-    if (result.success > 0) {
-      toast.success(
-        `已导入 ${result.success} 条规则${result.failed > 0 ? `,${result.failed} 条失败` : ""}`,
-      );
-    }
-    if (result.failed > 0 && result.lastError) {
-      toast.error(result.lastError);
-    }
-    // 无论成败都关闭 Dialog(失败明细已在 Dialog 内展示)
-    setImportOpen(false);
-  }
-
   const pool = candidates ?? EMPTY_POOL;
   const labelOptions = labels ?? [];
 
-  // 编辑打开时若规则已被删,关闭编辑器
+  // 编辑中的规则被删除:保留草稿转"新建"态,不丢未保存内容
   useEffect(() => {
     if (editingId && !rules.some((r) => r.id === editingId)) {
-      actions.closeEditor();
+      actions.detachEditor();
+      toast.warning("当前编辑的规则已被删除,草稿已转为新建(保存将创建新规则)");
     }
   }, [editingId, rules, actions]);
 
@@ -283,7 +160,7 @@ export function AddrSimPage() {
                   actions.openCreate();
                 }}
                 onImport={() => setImportOpen(true)}
-                onCopy={handleCopy}
+                onCopy={ruleActions.handleCopy}
                 onDelete={(r) => setDeleteRow(r)}
                 onDeleteMany={() => {
                   // 多选已在列表内,直接打开确认框
@@ -299,8 +176,8 @@ export function AddrSimPage() {
                   labels={labelOptions}
                   candidates={pool}
                   isPending={isEditorPending}
-                  onSave={handleSave}
-                  onUpdateAll={handleUpdateAll}
+                  onSave={ruleActions.handleSave}
+                  onUpdateAll={ruleActions.handleUpdateAll}
                 />
               ) : candidatesLoading ? (
                 <div className="space-y-2">
@@ -337,62 +214,28 @@ export function AddrSimPage() {
       </Reveal>
 
       {/* 单条删除确认 */}
-      <Dialog
+      <ConfirmDialog
         open={Boolean(deleteRow)}
         onOpenChange={(v) => {
           if (!v) setDeleteRow(null);
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>删除规则</DialogTitle>
-            <DialogDescription>
-              {`确定删除规则「${deleteRow?.name ?? ""}」?此操作不可恢复。`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteRow(null)}>
-              取消
-            </Button>
-            <Button
-              onClick={confirmDelete}
-              disabled={mut.remove.isPending}
-              className="bg-danger text-white hover:bg-danger/90"
-            >
-              {mut.remove.isPending ? "删除中…" : "删除"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="删除规则"
+        description={`确定删除规则「${deleteRow?.name ?? ""}」?此操作不可恢复。`}
+        isPending={mut.remove.isPending}
+        onConfirm={confirmDelete}
+      />
 
       {/* 批量删除确认 */}
-      <Dialog
+      <ConfirmDialog
         open={batchDeleteOpen}
         onOpenChange={(v) => {
           if (!v) setBatchDeleteOpen(false);
         }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>批量删除</DialogTitle>
-            <DialogDescription>
-              {`确定删除选中的 ${selectedIds.length} 条规则?此操作不可恢复。`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setBatchDeleteOpen(false)}>
-              取消
-            </Button>
-            <Button
-              onClick={confirmBatchDelete}
-              disabled={mut.removeMany.isPending || selectedIds.length === 0}
-              className="bg-danger text-white hover:bg-danger/90"
-            >
-              {mut.removeMany.isPending ? "删除中…" : "删除"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="批量删除"
+        description={`确定删除选中的 ${selectedIds.length} 条规则?此操作不可恢复。`}
+        isPending={mut.removeMany.isPending}
+        onConfirm={confirmBatchDelete}
+      />
 
       {/* 从 Label Studio 标注文件提取规则 */}
       <AddrSimImportDialog
@@ -400,8 +243,8 @@ export function AddrSimPage() {
         onOpenChange={setImportOpen}
         labels={labelOptions}
         existingRuleNames={rules.map((r) => r.name)}
-        onImportOne={handleImportOne}
-        onImportComplete={handleImportComplete}
+        onImportOne={ruleActions.handleImportOne}
+        onImportComplete={ruleActions.handleImportComplete}
       />
     </div>
   );

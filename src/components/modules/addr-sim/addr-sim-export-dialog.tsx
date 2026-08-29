@@ -16,14 +16,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  computeCountsByRatios,
-  generateForRules,
-  shuffleArray,
-  toLabelStudioExported,
-  type CandidatePool,
-} from "@/lib/addr-sim/generator";
+import { toLabelStudioExported, type CandidatePool } from "@/lib/addr-sim/generator";
 import type { AddrSimRuleRow } from "./addr-sim-rule-editor";
+import { useBuildItems } from "./hooks/use-build-items";
 import { useAddrSimGenerateState } from "./stores/addr-sim-store";
 
 /** 导出文件名前缀 */
@@ -76,43 +71,13 @@ export function AddrSimExportDialog({
     }
   }, [open]);
 
-  const selectedRules = useMemo(
-    () =>
-      rules
-        .filter((r) => r.status !== 0)
-        .filter((r) => selectedIds.includes(r.id))
-        .sort((a, b) => selectedIds.indexOf(a.id) - selectedIds.indexOf(b.id)),
-    [rules, selectedIds],
-  );
-
-  const totalPct = useMemo(
-    () => selectedRules.reduce((sum, r) => sum + (ratios[r.id] ?? 0), 0),
-    [selectedRules, ratios],
-  );
-  const valid = selectedRules.length > 0 && totalPct === 100;
-
-  // 按比例换算条数(向下取整 + 余数并入第一条;与预览一致)
-  const counts = useMemo(
-    () =>
-      computeCountsByRatios(
-        selectedRules.map((r) => ({ id: r.id, ratio: ratios[r.id] ?? 0 })),
-        totalCount,
-      ),
-    [selectedRules, ratios, totalCount],
-  );
-
-  function buildItems(count: number, shuffle = false) {
-    const scale = count === totalCount ? counts : computeCountsByRatios(
-      selectedRules.map((r) => ({ id: r.id, ratio: ratios[r.id] ?? 0 })),
-      count,
-    );
-    const items = generateForRules(
-      selectedRules.map((r) => ({ name: r.name, steps: r.steps })),
-      scale,
-      { rng: Math.random, candidates },
-    );
-    return shuffle ? shuffleArray(items) : items;
-  }
+  const { selectedRules, valid, buildItems } = useBuildItems({
+    rules,
+    selectedIds,
+    candidates,
+    totalCount,
+    ratios,
+  });
 
   // 固定预览前 10 条(与导出同源:same 换算 + 乱序开关影响顺序)
   const previewItems = useMemo(() => {
@@ -141,8 +106,15 @@ export function AddrSimExportDialog({
         toName: toName.trim(),
         fileUpload: `${LS_FILE_PREFIX}-tasks.json`,
       });
+      // 文件名带规则标识(前两条规则名,截断避免过长)+ 时间戳
+      const ruleTag =
+        selectedRules
+          .slice(0, 2)
+          .map((r) => r.name)
+          .join("-")
+          .slice(0, 40) || "all";
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-      downloadJson(exported, `${LS_FILE_PREFIX}-${stamp}.json`);
+      downloadJson(exported, `${LS_FILE_PREFIX}-${ruleTag}-${stamp}.json`);
       toast.success(`已导出 ${exported.length} 条 LS 标注任务`);
     } catch (err) {
       toast.error(`导出失败:${err instanceof Error ? err.message : String(err)}`);

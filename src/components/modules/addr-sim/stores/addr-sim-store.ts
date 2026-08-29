@@ -122,6 +122,10 @@ interface Actions {
   markNameEdited: () => void;
   setEditingRadio: (radio: number | null) => void;
   setEditingStatus: (status: 0 | 1) => void;
+  /**
+   * 编辑中的规则被删除时调用:保留草稿与名称,脱离原 id → 保存时按"新建"处理。
+   */
+  detachEditor: () => void;
   addStep: (step?: AddrSimStep) => void;
   updateStep: (id: string, step: AddrSimStep) => void;
   removeStep: (id: string) => void;
@@ -230,6 +234,17 @@ export const useAddrSimStore = create<State & Actions>()((set, get) => ({
 
   setEditingName: (name) =>
     set({ editingName: name, nameEdited: true }),
+
+  detachEditor: () => {
+    const { editingId, editingName } = get();
+    // 无编辑中规则 → 无操作
+    if (!editingId) return;
+    set({
+      editingId: null,
+      // 名称加标记,提示用户该草稿已脱离原规则
+      editingName: editingName ? `${editingName}(已脱离)` : editingName,
+    });
+  },
 
   setEditingRadio: (radio) => set({ editingRadio: radio }),
   setEditingStatus: (status) => set({ editingStatus: status }),
@@ -353,6 +368,7 @@ type ActionsSlice = Pick<
   | "setEditingName"
   | "setEditingRadio"
   | "setEditingStatus"
+  | "detachEditor"
   | "addStep"
   | "updateStep"
   | "removeStep"
@@ -372,6 +388,7 @@ export function useAddrSimActions(): ActionsSlice {
       setEditingName: s.setEditingName,
       setEditingRadio: s.setEditingRadio,
       setEditingStatus: s.setEditingStatus,
+      detachEditor: s.detachEditor,
       addStep: s.addStep,
       updateStep: s.updateStep,
       removeStep: s.removeStep,

@@ -42,7 +42,7 @@ export type VillageDetailLike = {
 export const formSchema = z.object({
   id: z.string().nullable(),
   name: z.string().trim().min(1, "请输入村名称").max(100, "名称最长 100 字"),
-  // alias 是 JSON 数组,表单内是条目数组(AliasTagInput 控 20 条上限)
+  // alias 是 JSON 数组,表单内是条目数组(TagInput 控 20 条上限)
   // 每条单独校验;提交时 toSubmit 去空 + JSON.stringify
   alias: z.array(z.object({ value: z.string().max(100, "别名最长 100 字") })),
   regionId: z.string(),

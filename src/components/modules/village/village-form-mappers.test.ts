@@ -150,7 +150,7 @@ describe("formSchema(zod 校验)", () => {
     ).toBe(true);
   });
 
-  // 上限 20 条由 AliasTagInput 的 max 控制,不在 schema 层校验;
+  // 上限 20 条由 TagInput 的 max 控制,不在 schema 层校验;
   // schema 只保证条目结构合法(空条目由 toSubmit 去空,过长由 TagInput 限制)
   it("alias 条目结构:任意数量均通过 schema", () => {
     const many = Array.from({ length: 30 }, (_, i) => ({ value: `a${i}` }));

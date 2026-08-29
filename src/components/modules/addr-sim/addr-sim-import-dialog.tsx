@@ -85,7 +85,20 @@ export function AddrSimImportDialog({
   // 现有规则名集合(快速查重)
   const existingSet = useMemo(() => new Set(existingRuleNames), [existingRuleNames]);
 
-  // 打开时清空状态
+  /** 重置全部状态(关闭时调用,保证下次打开是干净状态) */
+  function resetState() {
+    setParsing(false);
+    setFileName(null);
+    setRules([]);
+    setUnknownLabels([]);
+    setTotalRecords(0);
+    setParseError(null);
+    setSelected(new Set());
+    setImporting(false);
+    setProgress(null);
+  }
+
+  // 打开时清空解析/选择态;关闭时全量重置
   useEffect(() => {
     if (open) {
       setSelected(new Set());
@@ -93,16 +106,7 @@ export function AddrSimImportDialog({
       setImporting(false);
       setProgress(null);
     } else {
-      // 关闭时重置
-      setParsing(false);
-      setFileName(null);
-      setRules([]);
-      setUnknownLabels([]);
-      setTotalRecords(0);
-      setParseError(null);
-      setSelected(new Set());
-      setImporting(false);
-      setProgress(null);
+      resetState();
       if (inputRef.current) inputRef.current.value = "";
     }
   }, [open]);
@@ -125,12 +129,19 @@ export function AddrSimImportDialog({
       setRules(extracted);
       setUnknownLabels(summary.unknownLabels);
       setTotalRecords(summary.totalRecords);
-      setSelected(new Set()); // 默认不勾选,让用户主动选
+      // 默认勾选出现次数最多的前 10 条(TOPN 快捷选择语义),用户可再调整
+      setSelected(
+        new Set(
+          extracted
+            .slice(0, Math.min(10, extracted.length))
+            .map((r) => r.name),
+        ),
+      );
       if (extracted.length === 0) {
         toast.warning("未提取到任何规则,请检查文件内容");
       } else {
         toast.success(
-          `提取到 ${extracted.length} 条规则(共 ${summary.totalRecords} 条样本)`,
+          `提取到 ${extracted.length} 条规则(共 ${summary.totalRecords} 条样本),已预选前 ${Math.min(10, extracted.length)} 条`,
         );
       }
     } catch (err) {

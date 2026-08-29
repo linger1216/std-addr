@@ -1,20 +1,19 @@
 "use client";
 
 /**
- * 别名标签输入框 —— 单一输入 + 已添加的 Badge 列表。
+ * TagInput —— 业务无关的数组型标签输入组件。
  *
  * 用法(回车提交 = 常见 TagInput 交互):
- *   <AliasTagInput value={fields} onChange={setFields} max={20} />
+ *   <TagInput value={entries} onChange={setEntries} max={20} />
  *
  * 交互:
- *   - 在输入框输入文本后按 Enter → 添加到已添加列表(去空 / 去重),清空输入框
- *   - 已添加的 Badge 上有 × 按钮,点击删除
- *   - 失焦也尝试提交(避免用户忘了按回车)
- *   - 输入框自身始终保持空白(条目存到列表)
- *   - 超过 max 时禁用添加(Enter 静默忽略)
- *
- * 无 React-hook-form 依赖:把 value 当 props 传入,父组件用 useState/useFieldArray 管。
- * 这里选最朴素的受控写法,让 village 和 community 两处都能复用,不用绑 RHF API。
+ *  - 输入后回车 / 失焦 / 点 + → 加入列表(去空 / 去重),清空输入框
+ *  - 草稿展开:`a,b,c` 一次添加 3 条、`["x","y"]` 一次添加 2 条
+ *    (逗号分隔 / JSON 数组字符串自动展开;细节见 parseTagDraft)
+ *  - 已添加的 Badge 上有 × 按钮,点击删除
+ *  - 输入框自身始终保持空白(条目存到列表)
+ *  - 达到 max 后禁用添加;展开后超过 max 会被截断
+ *  - 可选:复制按钮(值以分隔符拼接复制到剪贴板)、跳过率滑块(条目前后缀场景)
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -25,13 +24,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import {
-  dedupAliases,
-  parseDraftAliases,
-  type AliasEntry,
-} from "@/lib/alias-entries";
+import { parseTagDraft } from "@/lib/tag-draft";
 
-export function AliasTagInput({
+/** 标签条目(通用形态:仅一个 value 字段) */
+export type TagEntry = { value: string };
+
+/** 去空 + 去重(保留首次出现顺序) */
+function dedupEntries(entries: TagEntry[]): TagEntry[] {
+  const seen = new Set<string>();
+  const out: TagEntry[] = [];
+  for (const e of entries) {
+    const v = e.value.trim();
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push({ value: v });
+  }
+  return out;
+}
+
+export function TagInput({
   value,
   onChange,
   max = 20,
@@ -42,8 +54,8 @@ export function AliasTagInput({
   skipRate,
   onSkipRateChange,
 }: {
-  value: AliasEntry[];
-  onChange: (next: AliasEntry[]) => void;
+  value: TagEntry[];
+  onChange: (next: TagEntry[]) => void;
   max?: number;
   placeholder?: string;
   disabled?: boolean;
@@ -69,18 +81,14 @@ export function AliasTagInput({
 
   function commitDraft() {
     // 草稿展开:逗号分隔或 JSON 数组字符串会一次性展开为多条;单值按原逻辑处理
-    const items = parseDraftAliases(draft);
+    const items = parseTagDraft(draft);
     if (items.length === 0) {
       setDraft("");
       return;
     }
     // 去重 + 不超过 max(超出部分截断)
-    const next = dedupAliases([...value, ...items.map((v) => ({ value: v }))]);
-    const capped =
-      next.length > max
-        ? // dedupAliases 已保持首次出现顺序,直接截断
-          next.slice(0, max)
-        : next;
+    const next = dedupEntries([...value, ...items.map((v) => ({ value: v }))]);
+    const capped = next.length > max ? next.slice(0, max) : next;
     onChange(capped);
     setDraft("");
   }
@@ -90,7 +98,7 @@ export function AliasTagInput({
     if (value.length === 0) return;
     const text = value.map((e) => e.value).join(copySeparator);
     try {
-      if (navigator.clipboard?.writeText) {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       } else {
         // 旧浏览器 fallback:临时 textarea + execCommand
@@ -126,7 +134,7 @@ export function AliasTagInput({
           onBlur={commitDraft}
           placeholder={placeholder}
           disabled={isDisabled}
-          aria-label="输入别名后回车添加"
+          aria-label="输入后回车添加"
         />
         <Button
           type="button"
@@ -134,8 +142,8 @@ export function AliasTagInput({
           size="icon-sm"
           onClick={commitDraft}
           disabled={isDisabled || draft.trim() === ""}
-          aria-label="添加别名"
-          title="添加别名"
+          aria-label="添加"
+          title="添加"
         >
           <Plus className="size-4" />
         </Button>
@@ -169,7 +177,7 @@ export function AliasTagInput({
               <button
                 type="button"
                 onClick={() => onChange(value.filter((_, idx) => idx !== i))}
-                aria-label={`删除别名 ${entry.value}`}
+                aria-label={`删除 ${entry.value}`}
                 title="删除"
                 className="text-muted-foreground hover:text-danger"
               >
@@ -189,7 +197,11 @@ export function AliasTagInput({
               max={100}
               step={5}
               onValueChange={(v) =>
-                onSkipRateChange(Array.isArray(v) ? Number(v[0] ?? 0) : (Number(v) || 0))
+                onSkipRateChange(
+                  Array.isArray(v)
+                    ? Number(v[0] ?? 0)
+                    : (Number(v) || 0),
+                )
               }
             />
           </div>

@@ -3,7 +3,7 @@
  *
  * 与 community 表单差异:
  *   - 多一个 type(类型)字段
- *   - alias 是 JSON 数组列(AliasTagInput 编辑),address 是地址列表(useFieldArray 编辑)
+ *   - alias 是 JSON 数组列(TagInput 编辑),address 是地址列表(useFieldArray 编辑)
  *   - 其余(name/regionId/status)与 community 一致
  *
  * 职责:
@@ -48,7 +48,7 @@ export const formSchema = z.object({
   id: z.string().nullable(),
   name: z.string().trim().min(1, "请输入 POI 名称").max(100, "名称最长 100 字"),
   type: z.string().trim().max(50, "类型最长 50 字"),
-  // alias 多值:AliasTagInput 控 20 条上限;每条限长 100
+  // alias 多值:TagInput 控 20 条上限;每条限长 100
   alias: z.array(z.object({ value: z.string().max(100, "别名最长 100 字") })),
   regionId: z.string(),
   status: z.union([z.literal(0), z.literal(1)]),

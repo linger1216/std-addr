@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchSelect } from "@/components/ui/search-select";
-import { AliasTagInput } from "@/components/modules/shared/alias-tag-input";
+import { TagInput } from "@/components/ui/tag-input";
 import type { RegionOption } from "./community-toolbar";
 import type { RouterOutputs } from "@/trpc/react";
 // 表单的纯数据映射(toForm/toSubmit/schema)独立成模块,便于单元测试
@@ -105,7 +105,7 @@ export function CommunityFormDialog({
                 control={control}
                 name="alias"
                 render={({ field }) => (
-                  <AliasTagInput
+                  <TagInput
                     value={field.value}
                     onChange={field.onChange}
                     max={20}

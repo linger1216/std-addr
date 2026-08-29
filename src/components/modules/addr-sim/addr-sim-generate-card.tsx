@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   CheckCircle2,
   Divide,
@@ -15,14 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
-import {
-  computeCountsByRatios,
-  generateForRules,
-  type CandidatePool,
-  type LabelStudioItem,
-} from "@/lib/addr-sim/generator";
+import type { CandidatePool, LabelStudioItem } from "@/lib/addr-sim/generator";
 import type { AddrSimRuleRow } from "./addr-sim-rule-editor";
-import { sliderNumber } from "./addr-sim-step-row";
+import { useBuildItems } from "./hooks/use-build-items";
+import { sliderNumber } from "@/components/ui/rate-slider";
 import { useAddrSimGenerateState } from "./stores/addr-sim-store";
 import { AddrSimExportDialog } from "./addr-sim-export-dialog";
 
@@ -48,54 +44,17 @@ export function AddrSimGenerateCard({
   const [preview, setPreview] = useState<LabelStudioItem[] | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
 
-  const selectedRules = useMemo(
-    () =>
-      rules
-        // 只允许启用规则参与生成
-        .filter((r) => r.status !== 0)
-        .filter((r) => selectedIds.includes(r.id))
-        // 按选中顺序稳定输出(数组顺序 = 勾选顺序)
-        .sort((a, b) => selectedIds.indexOf(a.id) - selectedIds.indexOf(b.id)),
-    [rules, selectedIds],
-  );
-
-
-  const totalPct = useMemo(
-    () => selectedRules.reduce((sum, r) => sum + (ratios[r.id] ?? 0), 0),
-    [selectedRules, ratios],
-  );
-  const valid = selectedRules.length > 0 && totalPct === 100;
-
-  // 按比例换算条数(向下取整 + 余数并入第一条;与导出/预览一致)
-  const counts = useMemo(
-    () =>
-      computeCountsByRatios(
-        selectedRules.map((r) => ({ id: r.id, ratio: ratios[r.id] ?? 0 })),
-        totalCount,
-      ),
-    [selectedRules, ratios, totalCount],
-  );
-
-  /** 按给定总量重新换算各规则条数(预览用小总量,同样做余数校正) */
-  function scaledCounts(total: number): number[] {
-    if (total === totalCount) return counts;
-    return computeCountsByRatios(
-      selectedRules.map((r) => ({ id: r.id, ratio: ratios[r.id] ?? 0 })),
-      total,
-    );
-  }
-
-  function runGenerate(total: number): LabelStudioItem[] {
-    return generateForRules(
-      selectedRules.map((r) => ({ name: r.name, steps: r.steps })),
-      scaledCounts(total),
-      { rng: Math.random, candidates },
-    );
-  }
+  const { selectedRules, totalPct, valid, counts, buildItems } = useBuildItems({
+    rules,
+    selectedIds,
+    candidates,
+    totalCount,
+    ratios,
+  });
 
   function handlePreview() {
     if (!valid) return;
-    const items = runGenerate(10);
+    const items = buildItems(10);
     setPreview(items);
     setGenerated(
       items.map((item) => ({ rule: "", item })),

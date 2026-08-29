@@ -7,10 +7,8 @@ import { GripVertical, Layers, RefreshCw, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { SearchSelect, type SearchSelectOption } from "@/components/ui/search-select";
-import { Slider } from "@/components/ui/slider";
-import { AliasTagInput } from "@/components/modules/shared/alias-tag-input";
+import { TagInput } from "@/components/ui/tag-input";
 import {
   type AddrSimAffix,
   type AddrSimRandomValue,
@@ -21,9 +19,9 @@ import {
   previewStepValues,
   type CandidatePool,
 } from "@/lib/addr-sim/generator";
-
-/** 数据来源四选一 */
-type SourceKind = "randomValue" | "customValue" | "randomNumber" | "randomChinese";
+import { getSourceKind, type SourceKind } from "@/lib/addr-sim/step-source";
+import { NumField } from "@/components/ui/num-field";
+import { RateSlider } from "@/components/ui/rate-slider";
 
 const SOURCE_TABLE_OPTIONS: SearchSelectOption<AddrSimSourceName>[] = [
   { value: "road", label: "道路(road)" },
@@ -36,81 +34,6 @@ const RANDOM_NUMBER_FORMATS: SearchSelectOption<"arabic" | "chinese">[] = [
   { value: "arabic", label: "阿拉伯数字" },
   { value: "chinese", label: "中文数字" },
 ];
-
-function num(v: unknown, fallback: number): number {
-  if (typeof v !== "number" || Number.isNaN(v)) return fallback;
-  return v;
-}
-
-/** 数字输入(受控,空串 = fallback) */
-function NumField({
-  value,
-  onChange,
-  min,
-  max,
-  className,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  min: number;
-  max: number;
-  className?: string;
-}) {
-  return (
-    <Input
-      type="number"
-      value={Number.isFinite(value) ? value : ""}
-      onChange={(e) => {
-        const raw = e.target.value;
-        if (raw === "") {
-          onChange(min);
-          return;
-        }
-        const n = Number(raw);
-        if (Number.isNaN(n)) return;
-        onChange(Math.max(min, Math.min(max, Math.round(n))));
-      }}
-      min={min}
-      max={max}
-      className={cn("h-7 w-16 px-2 text-[12.5px] tabular-nums", className)}
-    />
-  );
-}
-
-/** 把 base-ui Slider 回调值归一成 number(兼容 number | number[]) */
-export function sliderNumber(v: unknown): number {
-  if (Array.isArray(v)) return Number(v[0] ?? 0);
-  return Number(v ?? 0);
-}
-
-/** 跳过率滑块(带百分比显示) */
-function RateSlider({
-  value,
-  onChange,
-  label,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="shrink-0 text-[11.5px] text-muted-foreground">{label}</span>
-      <div className="w-28">
-        <Slider
-          value={value}
-          min={0}
-          max={100}
-          step={5}
-          onValueChange={(v) => onChange(sliderNumber(v))}
-        />
-      </div>
-      <span className="w-9 shrink-0 text-right text-[11.5px] tabular-nums text-muted-foreground">
-        {value}%
-      </span>
-    </div>
-  );
-}
 
 /**
  * 步骤行:名称 + 数据来源三选一 + 前后缀 + 跳过率 + 单步预览。
@@ -146,16 +69,8 @@ function StepRowInner({
   const [showPreview, setShowPreview] = useState(false);
   const [previewTick, setPreviewTick] = useState(0);
 
-  // 数据来源判定(允许同时多字段时取第一个命中的展示顺序)
-  const sourceKind: SourceKind = step.randomValue
-    ? "randomValue"
-    : step.customValue
-      ? "customValue"
-      : step.randomNumber
-        ? "randomNumber"
-        : step.randomChinese
-          ? "randomChinese"
-          : "randomValue";
+  // 数据来源判定(纯函数,见 lib/addr-sim/step-source)
+  const sourceKind: SourceKind = getSourceKind(step);
 
   const labelOptions = useMemo<SearchSelectOption[]>(
     () =>
@@ -329,7 +244,7 @@ function StepRowInner({
 
         {sourceKind === "customValue" && (
           <div className="max-w-xl">
-            <AliasTagInput
+            <TagInput
               value={(step.customValue?.list ?? []).map((v) => ({ value: v }))}
               onChange={(entries) =>
                 patch({
@@ -363,7 +278,7 @@ function StepRowInner({
             <div className="flex items-center gap-1.5">
               <span className="text-[11.5px] text-muted-foreground">位数</span>
               <NumField
-                value={num(step.randomNumber?.minDigits, 1)}
+                value={(step.randomNumber?.minDigits ?? 1)}
                 onChange={(minDigits) =>
                   patch({
                     randomNumber: {
@@ -378,7 +293,7 @@ function StepRowInner({
               />
               <span className="text-[11.5px] text-muted-foreground">至</span>
               <NumField
-                value={num(step.randomNumber?.maxDigits, 4)}
+                value={(step.randomNumber?.maxDigits ?? 4)}
                 onChange={(maxDigits) =>
                   patch({
                     randomNumber: {
@@ -400,7 +315,7 @@ function StepRowInner({
             <div className="flex items-center gap-1.5">
               <span className="text-[11.5px] text-muted-foreground">长度</span>
               <NumField
-                value={num(step.randomChinese?.minLength, 2)}
+                value={(step.randomChinese?.minLength ?? 2)}
                 onChange={(minLength) =>
                   patch({
                     randomChinese: {
@@ -414,7 +329,7 @@ function StepRowInner({
               />
               <span className="text-[11.5px] text-muted-foreground">至</span>
               <NumField
-                value={num(step.randomChinese?.maxLength, 4)}
+                value={(step.randomChinese?.maxLength ?? 4)}
                 onChange={(maxLength) =>
                   patch({
                     randomChinese: {
@@ -438,7 +353,7 @@ function StepRowInner({
           <span className="mb-1 block text-[11.5px] font-medium text-muted-foreground">
             前缀(多值)
           </span>
-          <AliasTagInput
+          <TagInput
             value={(step.prefix?.texts ?? []).map((v) => ({ value: v }))}
             onChange={(entries) =>
               patchAffix("prefix", { texts: entries.map((e) => e.value) })
@@ -454,7 +369,7 @@ function StepRowInner({
           <span className="mb-1 block text-[11.5px] font-medium text-muted-foreground">
             后缀(多值)
           </span>
-          <AliasTagInput
+          <TagInput
             value={(step.suffix?.texts ?? []).map((v) => ({ value: v }))}
             onChange={(entries) =>
               patchAffix("suffix", { texts: entries.map((e) => e.value) })
