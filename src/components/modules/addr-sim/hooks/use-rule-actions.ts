@@ -3,19 +3,27 @@
  *  - 保存(新建/更新,含 radio/status)
  *  - 复制规则
  *  - "更新全局"(把步骤覆盖到所有规则的同名步骤 + 按要素重命名)
- *  - 从数据提取导入(逐条 + 完成回调)
+ *  - 从数据提取导入(逐条 + 完成回调 + 导入后占比重分配)
+ *  - 快速分配占比(选中 N 条 → 按当前排序递减权重分配)
  *
  * page.tsx 只负责 UI 状态与挂载,业务动作集中在本 hook(可测、可复用)。
  */
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import { toApiError } from "@/lib/api/error";
+import { allocateByWeights } from "@/lib/addr-sim/radios";
 
 import type { AddrSimStep } from "@/lib/validators/addr-sim";
 import type { AddrSimRuleRow } from "../addr-sim-rule-editor";
+import { useAddrSimStore } from "../stores/addr-sim-store";
+
+/** 批量占比更新 mutation 的最小形态(输入由 tRPC 推断) */
+type BatchRadioMutation = {
+  mutate: (input: { updates: Array<{ id: string; radio: number }> }) => void;
+};
 
 export interface UseRuleActionsOptions {
   /** 当前规则列表(读最新数据,避免闭包过期) */
@@ -30,11 +38,30 @@ export interface UseRuleActionsOptions {
     mutate: (input: unknown) => void;
     mutateAsync: (input: unknown) => Promise<unknown>;
   };
+  /**
+   * 批量占比更新(ruleBatchUpdate)。
+   * 导入后重分配 + 快速分配占比共用,一次调用避免 N 次 update 各自 toast。
+   */
+  reallocate: BatchRadioMutation;
   onImportDialogChange: (v: boolean) => void;
 }
 
+/** 本次导入成功创建的规则(供完成后占比重分配) */
+interface ImportedCreate {
+  id: string;
+  name: string;
+  /** 样本次数(新规则的权重来源) */
+  count: number;
+  /** 创建时写入的占比(用于判断是否还需更新) */
+  radio: number;
+}
+
 export function useRuleActions(opts: UseRuleActionsOptions) {
-  const { rules, editingId, create, update, onImportDialogChange } = opts;
+  const { rules, editingId, create, update, reallocate, onImportDialogChange } =
+    opts;
+
+  /** 本次导入成功创建的规则(每次导入完成清空) */
+  const importedRef = useRef<ImportedCreate[]>([]);
 
   /** 保存:新建或更新(radio/status 随 payload 传递) */
   const handleSave = useCallback(
@@ -126,18 +153,39 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
     [rules, editingId, update],
   );
 
-  /** 从数据提取导入:逐条创建(进度由 Dialog 管理),完成回调关闭 Dialog */
+  /** 从数据提取导入:逐条创建(进度由 Dialog 管理),成功记录到 importedRef 供完成后重分配 */
   const handleImportOne = useCallback(
-    async (rule: { name: string; steps: AddrSimStep[]; radio: number }) => {
-      await create.mutateAsync({
+    async (rule: {
+      name: string;
+      steps: AddrSimStep[];
+      radio: number;
+      /** 样本次数(ExtractedRule.count,作为重分配权重) */
+      count?: number;
+    }) => {
+      const res = (await create.mutateAsync({
         name: rule.name,
         steps: rule.steps,
         radio: rule.radio,
-      });
+      })) as { id?: string } | null | undefined;
+      // 只记录创建成功的规则(失败的不参与重分配)
+      if (res?.id) {
+        importedRef.current.push({
+          id: res.id,
+          name: rule.name,
+          count: rule.count ?? 0,
+          radio: rule.radio,
+        });
+      }
+      return { id: res?.id ?? "" };
     },
     [create],
   );
 
+  /**
+   * 导入完成后:按「现有规则占比 + 本次导入规则样本次数」重新分配全部占比,
+   * 使合计恒为 100%(需求:导入时按当前规则 + 新导入规则重新分配占比)。
+   * 涉及占比变化的规则走一次 ruleBatchUpdate,避免 N 次 update 各自 toast。
+   */
   const handleImportComplete = useCallback(
     (result: {
       success: number;
@@ -145,9 +193,56 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
       total: number;
       lastError: string | null;
     }) => {
+      const created = importedRef.current;
+      const createdIds = new Set(created.map((c) => c.id));
+
+      // —— 占比重分配 ——
+      let reallocated = false;
+      if (result.success > 0 && created.length > 0) {
+        // 参与者:现有规则(已设置占比,权重 = 当前占比)+ 本次导入成功规则(权重 = 样本次数)
+        const weights: Array<{ id: string; weight: number }> = [];
+        for (const r of rules) {
+          // 导入期间每次 create 都会 invalidate,ruleList 可能已含本次新规则,
+          // 用 createdIds 过滤,避免重复计数
+          if (createdIds.has(r.id)) continue;
+          if (typeof r.radio !== "number") continue; // 未设置占比的规则不参与
+          weights.push({ id: r.id, weight: r.radio });
+        }
+        for (const c of created) weights.push({ id: c.id, weight: c.count });
+
+        const targets = allocateByWeights(weights);
+        const updates: Array<{ id: string; radio: number }> = [];
+        for (const r of rules) {
+          if (createdIds.has(r.id)) continue;
+          if (typeof r.radio !== "number") continue;
+          const t = targets[r.id];
+          if (t !== undefined && t !== r.radio) {
+            updates.push({ id: r.id, radio: t });
+          }
+        }
+        for (const c of created) {
+          const t = targets[c.id];
+          if (t !== undefined && t !== c.radio) {
+            updates.push({ id: c.id, radio: t });
+          }
+        }
+
+        if (updates.length > 0) {
+          reallocate.mutate({ updates });
+          reallocated = true;
+          // 生成比例同步:已勾选的规则立即用新占比(不必等列表刷新)
+          const state = useAddrSimStore.getState();
+          for (const u of updates) {
+            if (state.selectedIds.includes(u.id)) state.setRatio(u.id, u.radio);
+          }
+        }
+      }
+      importedRef.current = [];
+
+      // —— 汇总提示 ——
       if (result.success > 0) {
         toast.success(
-          `已导入 ${result.success} 条规则${result.failed > 0 ? `,${result.failed} 条失败` : ""}`,
+          `已导入 ${result.success} 条规则${result.failed > 0 ? `,${result.failed} 条失败` : ""}${reallocated ? ",占比已按权重重新分配(合计 100%)" : ""}`,
         );
       }
       if (result.failed > 0 && result.lastError) {
@@ -156,7 +251,24 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
       // 无论成败都关闭 Dialog(失败明细已在 Dialog 内展示)
       onImportDialogChange(false);
     },
-    [onImportDialogChange],
+    [rules, reallocate, onImportDialogChange],
+  );
+
+  /**
+   * 快速分配占比:把选中规则(按当前排序的传入顺序)的占比批量设为 pairs 中的值。
+   * pairs 由规则列表用 allocateByOrder 计算(第一个规则占比最多)。
+   * 效果:
+   *  - 立即更新生成卡片比例(store.ratios);
+   *  - 批量持久化到规则 radio(ruleBatchUpdate,一次调用)。
+   */
+  const handleQuickAllocate = useCallback(
+    (pairs: Array<{ id: string; radio: number }>) => {
+      if (pairs.length === 0) return;
+      const state = useAddrSimStore.getState();
+      for (const p of pairs) state.setRatio(p.id, p.radio);
+      reallocate.mutate({ updates: pairs });
+    },
+    [reallocate],
   );
 
   return {
@@ -165,5 +277,6 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
     handleUpdateAll,
     handleImportOne,
     handleImportComplete,
+    handleQuickAllocate,
   };
 }

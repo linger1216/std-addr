@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 import { useCrudMutations } from "@/lib/crud/use-crud-mutations";
+import { toApiError } from "@/lib/api/error";
 import type { CandidatePool } from "@/lib/addr-sim/generator";
 import { toRuleRows } from "@/lib/addr-sim/rule-mappers";
 
@@ -75,6 +76,17 @@ export function AddrSimPage() {
     },
   });
 
+  // 批量占比更新:导入后重分配 / 快速分配占比 共用(一次调用,一条 toast,一次失效)
+  const batchRadio = api.addrSim.ruleBatchUpdate.useMutation({
+    onSuccess: async (res) => {
+      await utils.addrSim.invalidate();
+      const count =
+        (res as { count?: number } | null | undefined)?.count ?? 0;
+      toast.success(`占比已更新(${count} 条)`);
+    },
+    onError: (e) => toast.error(toApiError(e).message),
+  });
+
   // —— 编辑状态 ——
   const { selectedIds, editingId, editingName, draftSteps } = useAddrSimRuleState();
   const actions = useAddrSimActions();
@@ -96,12 +108,16 @@ export function AddrSimPage() {
     );
   }, [rules, actions]);
 
-  // —— 规则操作(保存/复制/全局同步/导入)——抽到 hooks/use-rule-actions
+  // —— 规则操作(保存/复制/全局同步/导入 + 批量占比)——抽到 hooks/use-rule-actions
   const ruleActions = useRuleActions({
     rules,
     editingId,
     create: mut.create,
     update: mut.update,
+    reallocate: {
+      mutate: (input: { updates: Array<{ id: string; radio: number }> }) =>
+        batchRadio.mutate(input),
+    },
     onImportDialogChange: setImportOpen,
   });
 
@@ -166,6 +182,7 @@ export function AddrSimPage() {
                   // 多选已在列表内,直接打开确认框
                   setBatchDeleteOpen(true);
                 }}
+                onQuickAllocate={ruleActions.handleQuickAllocate}
               />
             </div>
 

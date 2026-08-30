@@ -1,11 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDownWideNarrow, Copy, FileText, FileUp, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowDownWideNarrow,
+  Copy,
+  FileText,
+  FileUp,
+  Gauge,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { allocateByOrder } from "@/lib/addr-sim/radios";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   type AddrSimRuleRow,
 } from "./addr-sim-rule-editor";
@@ -31,6 +42,7 @@ export function AddrSimRuleList({
   onCopy,
   onDelete,
   onDeleteMany,
+  onQuickAllocate,
 }: {
   rules: AddrSimRuleRow[];
   selectedIds: string[];
@@ -43,9 +55,13 @@ export function AddrSimRuleList({
   onCopy: (rule: AddrSimRuleRow) => void;
   onDelete: (rule: AddrSimRuleRow) => void;
   onDeleteMany: (ids: string[]) => void;
+  /** 按权重分配占比:pairs = [{ id, radio }](由本组件按当前排序计算,父级批量落库) */
+  onQuickAllocate: (pairs: Array<{ id: string; radio: number }>) => void;
 }) {
   const setSelected = useAddrSimActions().setSelected;
   const [sortMode, setSortMode] = useState<SortMode>("created");
+  /** 快速分配占比和(选中规则的占比合计,如 60) */
+  const [quickTotal, setQuickTotal] = useState("");
 
   const sortedRules = useMemo(() => {
     const list = [...rules];
@@ -72,6 +88,39 @@ export function AddrSimRuleList({
   function selectTop(n: number) {
     const top = sortedRules.slice(0, Math.min(n, sortedRules.length)).map((r) => r.id);
     setSelected(top);
+  }
+
+  /** 选中规则按当前排序的有序列表(快速分配按此顺序递减权重) */
+  const orderedSelected = useMemo(
+    () => sortedRules.filter((r) => selectedIds.includes(r.id)),
+    [sortedRules, selectedIds],
+  );
+
+  /** 快速分配占比:校验占比和 → 按当前排序递减权重分配 → 父级批量落库 */
+  function handleQuickAllocate() {
+    const n = orderedSelected.length;
+    if (n === 0) {
+      toast.warning("请先勾选要分配占比的规则");
+      return;
+    }
+    const total = Number(quickTotal);
+    if (!Number.isFinite(total) || total <= 0) {
+      toast.error("请填写占比和(如 60)");
+      return;
+    }
+    if (total < n) {
+      toast.error(`占比和不能小于规则数(${n})`);
+      return;
+    }
+    if (total > 100) {
+      toast.error("占比和不能超过 100%");
+      return;
+    }
+    // 按权重 N, N-1, …, 1 分配:第一个规则占比最多,差额自动计算
+    const shares = allocateByOrder(n, Math.round(total));
+    onQuickAllocate(
+      orderedSelected.map((r, i) => ({ id: r.id, radio: shares[i]! })),
+    );
   }
 
   return (
@@ -162,6 +211,46 @@ export function AddrSimRuleList({
               {label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 快速分配占比:先勾选 N 条 → 直接设定占比和(如 60%)→ 按当前排序递减权重自动分配 */}
+      {sortedRules.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Gauge className="size-3.5 text-muted-foreground/70" />
+          <span className="text-[12px] font-medium text-muted-foreground">
+            快速分配
+          </span>
+          <Input
+            type="number"
+            value={quickTotal}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "" || /^\d*\.?\d*$/.test(v)) setQuickTotal(v);
+            }}
+            placeholder="占比和"
+            disabled={orderedSelected.length === 0}
+            min={orderedSelected.length}
+            max={100}
+            className="h-7 w-[70px] px-2 text-right text-[12px] tabular-nums"
+            title={`选中 ${orderedSelected.length} 条规则的占比合计,如 60`}
+          />
+          <span className="text-[11.5px] text-muted-foreground">%</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleQuickAllocate}
+            disabled={orderedSelected.length === 0}
+            className="h-7 px-2.5 text-[11.5px]"
+          >
+            按权重分配
+          </Button>
+          <span
+            className="hidden text-[11px] text-muted-foreground/70 sm:inline"
+            title="按当前排序递减权重(N, N-1, …, 1)分配,第一个规则占比最多"
+          >
+            按当前排序,第一条占比最多
+          </span>
         </div>
       )}
 

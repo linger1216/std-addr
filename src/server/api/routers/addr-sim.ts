@@ -215,4 +215,37 @@ export const addrSimRouter = createTRPCRouter({
       });
       return { count: result.count };
     }),
+
+  /**
+   * 批量更新占比(单条 radio,1~100 必填)。
+   *
+   * 用途(一次调用,避免 N 次 update 各自 toast/invalidate):
+   *  - 从数据提取导入规则后,按「现有规则占比 + 新规则样本次数」重新分配全部占比;
+   *  - 规则列表「快速分配占比」批量落库选中规则的占比。
+   */
+  ruleBatchUpdate: adminProcedure
+    .input(
+      z.object({
+        updates: z
+          .array(
+            z.object({
+              id: z.string().min(1),
+              radio: z.number().int().min(1).max(100),
+            }),
+          )
+          .min(1)
+          .max(500),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.$transaction(
+        input.updates.map((u) =>
+          ctx.db.addressMockRule.update({
+            where: { id: u.id },
+            data: { radio: u.radio },
+          }),
+        ),
+      );
+      return { count: input.updates.length };
+    }),
 });

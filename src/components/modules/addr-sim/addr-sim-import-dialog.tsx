@@ -53,7 +53,9 @@ export function AddrSimImportDialog({
     name: string;
     steps: ExtractedRule["steps"];
     radio: number;
-  }) => Promise<void>;
+    /** 样本次数(供导入后占比重分配做权重) */
+    count?: number;
+  }) => Promise<{ id: string }>;
   /** 全部导入完成回调(父级刷新列表 + 汇总提示 + 关闭) */
   onImportComplete: (result: {
     success: number;
@@ -182,6 +184,8 @@ export function AddrSimImportDialog({
       name: r.name,
       steps: r.steps,
       radio: radios[i] ?? 1,
+      // 样本次数:导入完成后按「现有规则占比 + 新规则样本次数」重新分配占比
+      count: r.count,
     }));
 
     setImporting(true);
@@ -283,6 +287,12 @@ export function AddrSimImportDialog({
                   )}
                 </span>
               </>
+            )}
+            {/* 占比重分配说明:导入完成后现有规则 + 新规则合并按权重归一 */}
+            {rules.length > 0 && (
+              <p className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground/80">
+                导入完成后,将按「现有规则占比 + 新规则样本次数」重新分配全部规则占比,合计恒为 100%
+              </p>
             )}
           </div>
         )}
