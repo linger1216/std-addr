@@ -96,6 +96,36 @@ def test_split_data_不同种子结果不同():
     assert t1 != t2
 
 
+def test_split_data_按地址长度分层分布一致():
+    """长短地址各半时,train/val 的长度占比应与整体一致(而非长地址全进一侧)。"""
+    # 500 条短地址(3 字符)+ 500 条长地址(30 字符)
+    short = [{"data": {"address": f"短{i}"}, "annotations": []} for i in range(500)]
+    long = [{"data": {"address": f"上海市闵行区华茂路{i}弄{100+i}号"}, "annotations": []} for i in range(500)]
+    data = short + long
+
+    train_part, val_part = split_data(data, 0.8, seed=42, bucket_size=5)
+
+    def short_share(samples):
+        return sum(1 for s in samples if len(s["data"]["address"]) < 10) / max(1, len(samples))
+
+    overall_share = short_share(data)          # 0.5
+    train_share = short_share(train_part)
+    val_share = short_share(val_part)
+
+    # 训练/验证中的短地址占比应接近整体的 50%(允许小幅偏差,证明分层生效而非某侧全为短/长)
+    assert abs(train_share - overall_share) < 0.05
+    assert abs(val_share - overall_share) < 0.05
+
+
+def test_split_data_单样本桶不崩():
+    """只有一个样本的极端桶(如极长地址)不应崩溃,且两侧合计等于输入。"""
+    data = [{"data": {"address": "缓"}, "annotations": []}]  # 1 条
+    one = [{"data": {"address": "超长" * 40}, "annotations": []}]  # 1 条极长
+    data += one
+    train_part, val_part = split_data(data, 0.8, seed=7, bucket_size=5)
+    assert len(train_part) + len(val_part) == 2
+
+
 def _ls_item(address: str, spans: list):
     """构造 LS 导出单条记录:spans = [(start, end, 中文label), ...]"""
     return {

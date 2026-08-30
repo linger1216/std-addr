@@ -107,14 +107,96 @@ def address_to_bio(address: str, entities: List[AddressEntity]) -> Tuple[List[st
 
 
 def split_data(
-    data: List[Dict], train_ratio: float = 0.8, seed: int = 42
+    data: List[Dict],
+    train_ratio: float = 0.8,
+    seed: int = 42,
+    bucket_size: int = 5,
 ) -> Tuple[List[Dict], List[Dict]]:
-    """按比例随机切分训练集 / 验证集(固定种子,结果可复现)。"""
+    """按地址长度分层随机切分训练集 / 验证集。
+
+    目标:保证 train/val 的地址长度分布与整体一致(避免纯随机下长短地址失衡,
+    例如验证集 99% 都是短地址)。做法:
+      1. 按地址字符长度分桶(每 bucket_size 字符一桶);
+      2. 每桶内按 train_ratio 随机抽取进训练集,其余进验证集;
+      3. 桶内样本不足 2 条时随机放入一侧(不强行拆分单样本桶)。
+
+    固定 seed 结果可复现;桶内比例随桶大小自然加权,长/短地址在两侧占比与整体一致。
+    """
+    if train_ratio <= 0 or train_ratio >= 1:
+        raise ValueError(f"train_ratio 必须在 (0, 1) 之间,当前 {train_ratio}")
     rng = random.Random(seed)
-    shuffled = data.copy()
-    rng.shuffle(shuffled)
-    split_idx = int(len(shuffled) * train_ratio)
-    return shuffled[:split_idx], shuffled[split_idx:]
+
+    # 1. 按地址长度分桶
+    buckets: Dict[int, List[Dict]] = {}
+    for item in data:
+        addr = item["data"]["address"]
+        bucket = len(addr) // bucket_size
+        buckets.setdefault(bucket, []).append(item)
+
+    # 2. 每桶内按比例切分(不足 2 条→整桶入一侧,保持比例近似)
+    train_part: List[Dict] = []
+    val_part: List[Dict] = []
+    for bucket_items in buckets.values():
+        rng.shuffle(bucket_items)
+        if len(bucket_items) < 2:
+            # 单样本桶:随机归入一侧(占比极小,不影响整体分布)
+            (train_part if rng.random() < train_ratio else val_part).extend(bucket_items)
+            continue
+        split_idx = int(len(bucket_items) * train_ratio)
+        train_part.extend(bucket_items[:split_idx])
+        val_part.extend(bucket_items[split_idx:])
+
+    # 3. 打乱顺序(桶内已有序,整体再 shuffle 一次避免长地址聚集)
+    rng.shuffle(train_part)
+    rng.shuffle(val_part)
+    return train_part, val_part
+
+
+def length_distribution(data: List[Dict], bucket_size: int = 5) -> Dict[str, List[int]]:
+    """统计地址长度分布(每桶样本数),供切分合理性检查。
+
+    Returns:
+        {bucket_label: [start, count]} e.g. {"0-4": [0, 123], "5-9": [5, 456], ...}
+    """
+    dist: Dict[str, List[int]] = {}
+    counts: Dict[int, int] = {}
+    for item in data:
+        addr = item["data"]["address"]
+        bucket = len(addr) // bucket_size
+        counts[bucket] = counts.get(bucket, 0) + 1
+    for bucket in sorted(counts):
+        start = bucket * bucket_size
+        dist[f"{start}-{start + bucket_size - 1}"] = [start, counts[bucket]]
+    return dist
+
+
+def print_length_distribution(
+    overall: List[Dict],
+    train_part: List[Dict],
+    val_part: List[Dict],
+    bucket_size: int = 5,
+) -> None:
+    """打印整体 / 训练 / 验证的长度分布对比(占比%),便于确认分层切分是否公允。"""
+    total = max(1, len(overall))
+    overall_dist = length_distribution(overall, bucket_size)
+    train_dist = length_distribution(train_part, bucket_size)
+    val_dist = length_distribution(val_part, bucket_size)
+
+    def pct(dist: Dict[str, List[int]], bucket_label: str) -> float:
+        entry = dist.get(bucket_label)
+        return (entry[1] / len(train_part)) * 100 if entry else 0.0
+
+    print(f"\n地址长度分布对比(桶宽 {bucket_size} 字符,占比 %):")
+    print(f"  {'长度桶':<8} {'整体':>7} {'训练':>7} {'验证':>7}")
+    for label, (_, n) in overall_dist.items():
+        train_n = train_dist.get(label, [0, 0])[1]
+        val_n = val_dist.get(label, [0, 0])[1]
+        print(
+            f"  {label:<8} {n / total * 100:6.1f}% "
+            f"{train_n / max(1, len(train_part)) * 100:6.1f}% "
+            f"{val_n / max(1, len(val_part)) * 100:6.1f}%"
+        )
+    print()
 
 
 def align_char_tags_to_tokens(
@@ -268,9 +350,12 @@ def convert_to_train_format(
     output_dir: str,
     train_ratio: float = 0.8,
     seed: int = 42,
+    bucket_size: int = 5,
     label_map: Optional[Dict[str, str]] = None,
 ) -> Dict:
-    """读取 exported JSON 文件,去重 + 切分,写出 train/val/tag2id/labels 四件套。
+    """读取 exported JSON 文件(合并全部),去重 + 按地址长度分层切分,写出四件套。
+
+    切分保证 train/val 的地址长度分布与整体一致(分层抽样,见 split_data)。
 
     Returns:
         统计信息 {total, deduped, train, val, tags}
@@ -311,8 +396,11 @@ def convert_to_train_format(
         top = ", ".join(f"{k}={v}" for k, v in label_counter.most_common())
         print(f"标签分布: {top}")
 
-    train_part, val_part = split_data(deduped, train_ratio, seed)
+    train_part, val_part = split_data(deduped, train_ratio, seed, bucket_size)
     print(f"Train: {len(train_part)}, Val: {len(val_part)}")
+
+    # 长度分布对比(整体 vs 训练 vs 验证),确认分层切分公允
+    print_length_distribution(deduped, train_part, val_part, bucket_size)
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -351,6 +439,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--out", type=str, default=str(DATA_DIR), help="输出目录(默认 data/)")
     parser.add_argument("--ratio", type=float, default=0.8, help="训练集比例(默认 0.8)")
+    parser.add_argument("--bucket-size", type=int, default=5, help="地址长度分桶宽度(字符,默认 5,切分按长度分层保证分布一致)")
     parser.add_argument("--seed", type=int, default=42, help="随机种子(默认 42)")
     return parser.parse_args()
 
@@ -369,6 +458,7 @@ if __name__ == "__main__":
         args.out,
         train_ratio=args.ratio,
         seed=args.seed,
+        bucket_size=args.bucket_size,
     )
     print(f"\n切分完成: total={stats['total']}, deduped={stats['deduped']}, "
           f"train={stats['train']}, val={stats['val']}, tags={stats['tags']}")

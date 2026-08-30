@@ -59,26 +59,36 @@ cd src/ner
 uv run python -m train.data
 ```
 
-**预期输出**(当前标注 10000 条):
+**合并 + 分层切分**:读取 `label/exported/` 下**全部 `*.json`**标注文件(city/labeled/village 等)合并为一个整体,
+去重后**按地址长度分层**切分(每 5 字符一桶,桶内按比例随机抽)——
+保证训练/验证集与整体的**地址长度分布一致**(避免 99% 都是短地址或长地址)。
+
+**预期输出**(合并 11923 条,去重 11746):
 
 ```
-读取标注文件(1 个):
-  .../label/exported/labeled.json: 10000 samples
-Dedup: 10000 → 9826 (174 removed)
-Train: 7860, Val: 1966
-Saved train data to .../data/train.json
-Saved val data to .../data/val.json
-Saved tag mapping to .../data/tag2id.json (55 tags)
-Saved label map cache to .../data/labels.json (27 labels)
+读取标注文件(3 个):
+  .../city_labeled.json: 1123 samples
+  .../labeled.json: 10000 samples
+  .../village_labeled.json: 800 samples
+Dedup: 11923 → 11746 (177 removed)
+标签分布: district=11019, city=10357, ...
+Train: 9393, Val: 2353
 
-切分完成: total=10000, deduped=9826, train=7860, val=1966, tags=55
+地址长度分布对比(桶宽 5 字符,占比 %):
+  长度桶     整体     训练     验证
+  0-4       0.3%    0.3%    0.3%
+  5-9       8.2%    8.2%    8.2%
+  10-14    16.2%   16.2%   16.2%
+  ...(整体/训练/验证三列占比基本一致,即分层公允)
+
+切分完成: total=11923, deduped=11746, train=9393, val=2353, tags=55
 ```
 
-- `data/train.json` / `data/val.json`:Label Studio 原始记录(8:2 切分,去重,固定种子 42 可复现);
+- `data/train.json` / `data/val.json`:Label Studio 原始记录(按长度分层 8:2 切分,去重,固定种子 42 可复现);
 - `data/tag2id.json`:55 个 BIO 标签 = `O` + 27 标签 × `B-/I-`(**标签集来自 DB label 表,非 json**);
 - `data/labels.json`:DB 标签映射缓存(数据库不可用时,训练/预标注降级使用)。
 
-可选参数:`--exported <目录>`、`--out <目录>`、`--ratio 0.9`、`--seed 7`。
+可选参数:`--exported <目录>`、`--out <目录>`、`--ratio 0.9`、`--bucket-size 5`(长度桶宽)、`--seed 7`。
 
 ---
 
@@ -128,7 +138,7 @@ Training complete! Best F1: ...
 cd src/ner
 uv run python -m train.train                      # 默认参数(20 epoch,全量)
 # 常用调参:
-uv run python -m train.train --epochs 10 --batch_size 16 --max_length 128
+uv run python -m train.train --epochs 10 --batch_size 16 --max_length 128 --patience 3
 uv run python -m train.train --patience 5         # 早停:实体 F1 连续 5 轮不升则停
 uv run python -m train.train --resume model/epochs/epoch_08.pt   # 从检查点续训(恢复优化器/学习率曲线/早停计数)
 uv run python -m train.train --save_epochs 0      # 只存 best,不存每轮(省磁盘)
