@@ -1,0 +1,29 @@
+[project]
+name = "std-addr"
+version = "0.1.0"
+description = "地址 NER:BERT-CRF 中文地址解析(训练 + 推理服务),独立于 Next.js 前端"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "label-studio-sdk>=2.1.1",
+    "pydantic>=2.13.5",
+    "pymysql>=1.2.0",
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
+    "torch>=2.13.0",
+    "tqdm>=4.70.0",
+    "transformers>=5.16.1",
+    "uvicorn[standard]>=0.52.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+# 仓库根为 pytest rootdir;NER 测试位于 src/ner/test,并将 src/ner 加入 sys.path,
+# 使测试内 `import train` / `import core` / `import service` 可直接解析
+testpaths = ["src/ner/test"]
+pythonpath = ["src/ner"]

@@ -1,0 +1,75 @@
+<View>
+  <!-- 地址文本显示 -->
+  <Text name="address" value="$address"></Text>
+
+  <!-- 地址元素标注 -->
+  <View style="margin-top: 16px; padding: 12px; background: #f5f5f5; border-radius: 4px;">
+
+  <Labels name="standard" toName="address">
+    <Label value="省份" background="#FF6B6B" />
+    <Label value="城市" background="#4ECDC4" />
+    <Label value="区县" background="#45B7D1" hotkey="1" />
+
+    <Label value="乡" background="#DDA0DD" />
+    <Label value="街道" background="#96CEB4" hotkey="2" />
+    <Label value="镇" background="#FFEAA7" />
+
+    <Label value="路" background="#85C1E9" hotkey="3" />
+    <Label value="巷" background="#58D68D" />
+    <Label value="高速公路" background="#E67E22" />
+    <Label value="快速路" background="#F1C40F" />
+
+    <!-- ====== 6. 门牌/弄/号 ====== -->
+    <Label value="弄" background="#EC7063" hotkey="4" />
+    <Label value="支弄" background="#F39C12" />
+    <Label value="路号" background="#5DADE2" hotkey="5" />
+
+    <!-- ====== 7. 小区/村/子区域/宅 ====== -->
+    <Label value="小区" background="#98D8C8" hotkey="c" />
+    <Label value="村" background="#BB8FCE" />
+    <Label value="子区域" background="#0808C8" hotkey="s" />
+
+    <!-- ====== 8. 楼栋/单元/楼层/室 ====== -->
+    <Label value="楼栋" background="#3498DB" hotkey="6" />
+    <Label value="单元" background="#E74C3C" />
+    <Label value="楼层" background="#1ABC9C" />
+    <Label value="室号" background="#E67E22" hotkey="7" />
+
+    <!-- ====== 9. 农村/集体地址 ====== -->
+    <Label value="队" background="#8E44AD" />
+    <Label value="组" background="#16A085" />
+    <Label value="宅" background="#FF6B6B" />
+
+    <!-- ====== 10. POI（地标/企业/兴趣点） ====== -->
+    <Label value="兴趣点" background="#E91E63" hotkey="p" />
+
+    <!-- ====== 11. 方向与修饰 ====== -->
+    <Label value="方向" background="#9B59B6" />
+    <Label value="其他" background="#95A5A6" />
+    <Label value="位置类型" background="#6C5CE7" hotkey="q" />
+  </Labels>
+  </View>
+
+  <!-- 标注说明 -->
+  <View style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 4px;">
+    <Header name="h2" value="📌 标注规则：选中地址片段 → 选择对应标签 (或按快捷键)" />
+    <Header name="h3" value="【快捷键速查】区县(1) 街道(2) 路(3) 弄(4) 路号(5) 楼栋(6) 室号(7) 小区(c) 兴趣点(p) 位置类型(q)" />
+    <Header name="h5" value="📍 示例1：标准城市地址" />
+    <Header name="h6" value="地址：北京市朝阳区建国路88号1号楼2单元301室" />
+    <Header name="h7" value="标注：北京→省份+城市 | 朝阳区→区县(1) | 建国路→路(3) | 88号→路号(5) | 1号楼→楼栋(6) | 2单元→单元 | 301室→室号(7)" />
+    <Header name="h9" value="📍 示例2：乡镇级地址（含弄/支弄）" />
+    <Header name="h10" value="地址：上海市浦东新区张江镇科苑路150弄3支弄6号楼3层302室" />
+    <Header name="h11" value="标注：上海→省份+城市 | 浦东新区→区县(1) | 张江镇→镇 | 科苑路→路(3) | 150弄→弄(4) | 3支弄→支弄 | 6号楼→楼栋(6) | 3层→楼层 | 302室→室号(7)" />
+    <Header name="h13" value="📍 示例3：交叉口 + 方向 + POI" />
+    <Header name="h14" value="地址：中春路与顾戴路交叉口南侧的闵行区体育公园" />
+    <Header name="h15" value="标注：中春路→路(3) | 顾戴路→路(3) | 交叉口→位置类型(q) | 南侧→方向 | 闵行区体育公园→兴趣点(p)" />
+    <Header name="h17" value="💡 标注建议：" />
+    <Header name="h18" value="1. 直辖市（如「北京市」「上海市」）同时标「省份」+「城市」" />
+    <Header name="h19" value="2. 「路」只标含「路」「大道」等后缀的道路名，不带后缀的不标" />
+    <Header name="h20" value="3. 「楼栋」包含「号楼」「栋」「幢」「座」等后缀" />
+    <Header name="h21" value="4. 「单元」包含「单元」「门」等后缀" />
+    <Header name="h22" value="5. 交叉口由「路」+「路」+「位置类型」组合，不标成一个整体" />
+    <Header name="h23" value="6. 一个地址片段可同时标多个标签，如「北京」标省份+城市" />
+    <Header name="h24" value="7. 无法归类的内容标为「其他」，地标/场所标为「兴趣点」" />
+  </View>
+</View>

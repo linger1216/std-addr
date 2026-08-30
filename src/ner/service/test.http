@@ -1,0 +1,47 @@
+### 健康检查
+GET http://localhost:8000/api/health
+
+### 单条地址解析
+GET http://localhost:8000/api/format?address=闵行区古美路1458号
+
+### 单条 - 完整地址
+GET http://localhost:8000/api/format?address=朝阳区建国路88号1号楼2单元301室
+
+### 单条 - 空地址
+GET http://localhost:8000/api/format?address=
+
+### 单条 - 缺少参数
+GET http://localhost:8000/api/format
+
+
+### 批量地址解析
+POST http://localhost:8000/api/batch_format
+Content-Type: application/json
+
+{
+  "addresses": [
+    "朝阳区建国路88号1号楼2单元301室",
+    "闵行区华茂路32弄17号",
+    "闵行区科苑路150弄3支弄6号楼3层302室"
+  ]
+}
+
+### 批量 - 含空地址
+POST http://localhost:8000/api/batch_format
+Content-Type: application/json
+
+{
+  "addresses": [
+    "闵行区华茂路32弄17号",
+    "",
+    "朝阳区建国路88号"
+  ]
+}
+
+### 批量 - 空数组
+POST http://localhost:8000/api/batch_format
+Content-Type: application/json
+
+{
+  "addresses": []
+}
