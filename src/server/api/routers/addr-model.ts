@@ -4,7 +4,7 @@ import {
   adminProcedure,
   createTRPCRouter,
 } from "@/server/api/trpc";
-import { checkModelHealth, resolveModelServiceUrl } from "@/lib/settings/model-service";
+import { checkModelHealth, readModelServiceUrl } from "@/lib/settings/model-service";
 import type { PrismaClient } from "../../../../generated/prisma/client";
 
 /** unknown → 可展示字符串(仅 string/number/boolean;其它返回空串) */
@@ -16,12 +16,11 @@ function toText(v: unknown): string {
 }
 
 /** 从 sys_setting 读模型服务 URL(DB → env → 默认) */
-async function readModelUrl(
-  ctx: { db: PrismaClient },
-): Promise<string> {
-  const rows = await ctx.db.sysSetting.findMany();
-  const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return resolveModelServiceUrl(settings["model.serviceUrl"], process.env.ML_SERVICE_URL);
+function readModelUrl(ctx: { db: PrismaClient }): Promise<string> {
+  return readModelServiceUrl(
+    () => ctx.db.sysSetting.findMany(),
+    process.env.ML_SERVICE_URL,
+  );
 }
 
 /** 统一错误归一:fetch 失败 / JSON 解析失败 → 抛出可展示信息 */

@@ -24,6 +24,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 import { api } from "@/trpc/react";
+import { FIELD_KEY_TO_ZH } from "@/lib/addr-model/fields";
+import { buildAnnotations, toText, type Annotation } from "@/lib/addr-model/annotations";
 import { AddrModelBatchDemo } from "./addr-model-batch-demo";
 
 /** 27 个地址要素的展示色板(循环取色,与标注可视化一致) */
@@ -39,14 +41,12 @@ function entityColor(idx: number): string {
   return ENTITY_COLORS[idx % ENTITY_COLORS.length]!;
 }
 
-/** 示例地址(点按填入输入框) */
+/** 示例地址(点按填入输入框;注意去重,chips 以地址为 key) */
 const EXAMPLES = [
   "闵行区七宝镇航华二村三街坊169号楼403室（驰骋小区）",
   "上海市浦东新区川沙路跃进村三组",
   "上海市新市路1500号",
   "闵行区华茂路32弄17号",
-  "上海市新市路1500号",
-  "浦东新区川沙路跃进村三组",
 ];
 
 /**
@@ -361,7 +361,7 @@ export function AddrModelPage() {
                             className="flex items-center justify-between gap-2 rounded-lg bg-card px-3 py-1.5 shadow-sm"
                           >
                             <span className="text-[12px] text-muted-foreground">
-                              {FIELD_LABELS[k] ?? k}
+                              {FIELD_KEY_TO_ZH[k] ?? k}
                             </span>
                             <span className="truncate text-[13px] font-medium tabular-nums">
                               {String(v)}
@@ -392,98 +392,7 @@ export function AddrModelPage() {
   );
 }
 
-/** 结构化字段 key → 中文要素名(与地址要素字典一致) */
-const FIELD_LABELS: Record<string, string> = {
-  province: "省份", city: "城市", district: "区县", street: "街道", town: "镇",
-  township: "乡", community: "小区", village: "村", subarea: "子区域",
-  road: "路", lane: "弄", sub_lane: "支弄", road_number: "路号", building: "楼栋",
-  floor: "楼层", unit: "单元", room: "室号", team: "队", group: "组",
-  zhai: "宅", alley: "巷", direction: "方向", expressway: "快速路",
-  highway: "高速公路", location_type: "位置类型", poi: "兴趣点", other: "其他",
-};
 
-/** 标注片段:matched=true 时按 start/end 精确切片;false 时原文未精确匹配(降级展示) */
-interface Annotation {
-  text: string;
-  label: string;
-  start?: number;
-  end?: number;
-  matched: boolean;
-}
-
-/** 字段值按分隔符拆子串(逗号/顿号/分号/空格),便于在原文中逐段匹配 */
-function splitFieldValue(v: string): string[] {
-  return v
-    .split(/[,，、;；\s]+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-}
-
-/** 从原文查找某子串的可用位置(跳过已占用片段) */
-function findUnusedPosition(
-  full: string,
-  part: string,
-  used: Set<number>,
-): number {
-  let idx = full.indexOf(part);
-  while (idx >= 0 && used.has(idx)) {
-    idx = full.indexOf(part, idx + 1);
-  }
-  return idx;
-}
-
-/**
- * 由结构化字段反查地址原文,生成标注分片(start/end 精确切片)。
- *  - 字段值整体找不到时,按分隔符拆子串逐段匹配(如 community="A,B" → A/B 分别命中);
- *  - 拆后仍无法匹配的字段降级为 unmatched(展示在原文区末尾,虚线样式)。
- * 保证"要素数 = 结构化字段数"(每字段至少一个片段)。
- */
-function buildAnnotations(full: string, data: Record<string, unknown>): Annotation[] {
-  const out: Annotation[] = [];
-  const used = new Set<number>();
-  for (const [key, raw] of Object.entries(data)) {
-    const text = toText(raw);
-    if (!text) continue;
-    const label = FIELD_LABELS[key] ?? key;
-    const parts = splitFieldValue(text);
-    let matchedAny = false;
-    for (const part of parts) {
-      const idx = findUnusedPosition(full, part, used);
-      if (idx < 0) continue;
-      used.add(idx);
-      out.push({
-        text: part,
-        label,
-        start: idx,
-        end: idx + part.length,
-        matched: true,
-      });
-      matchedAny = true;
-    }
-    if (!matchedAny) {
-      // 整字段(含子串)都未匹配 → 降级展示模型原值
-      out.push({ text, label, matched: false });
-    }
-  }
-  // matched 按原文位置排序,未匹配的放最后
-  return out.sort((a, b) =>
-    a.matched === b.matched
-      ? (a.start ?? Number.MAX_SAFE_INTEGER) - (b.start ?? Number.MAX_SAFE_INTEGER)
-      : a.matched
-        ? -1
-        : 1,
-  );
-}
-
-/** unknown → 可展示字符串(仅 string/number/boolean;其它返回空串) */
-function toText(v: unknown): string {
-  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-    return String(v);
-  }
-  return "";
-}
-
-/** 把精确匹配的实体片段渲染成错落高亮的标注文本(直接标注要素名,同要素同色) */
 function renderAnnotated(full: string, annotations: Annotation[]) {
   const matched = annotations.filter((a) => a.matched);
   if (matched.length === 0) return full;

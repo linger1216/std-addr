@@ -5,10 +5,7 @@ import {
   adminProcedure,
   createTRPCRouter,
 } from "@/server/api/trpc";
-import {
-  checkModelHealth,
-  resolveModelServiceUrl,
-} from "@/lib/settings/model-service";
+import { checkModelHealth, readModelServiceUrl } from "@/lib/settings/model-service";
 
 /** 系统设置 key 白名单(仅允许管理这些键) */
 const SETTING_KEYS = ["sys.name", "sys.description", "model.serviceUrl"] as const;
@@ -50,10 +47,8 @@ export const settingsRouter = createTRPCRouter({
 
   /** 模型服务连通性测试(服务端 fetch,规避浏览器 CORS) */
   modelTest: adminProcedure.query(async ({ ctx }) => {
-    const rows = await ctx.db.sysSetting.findMany();
-    const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-    const url = resolveModelServiceUrl(
-      settings["model.serviceUrl"],
+    const url = await readModelServiceUrl(
+      () => ctx.db.sysSetting.findMany(),
       process.env.ML_SERVICE_URL,
     );
     const health = await checkModelHealth(url);

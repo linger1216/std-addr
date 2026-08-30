@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ADDR_FIELDS,
   columnOptions,
   decodeCsvBuffer,
   detectHeaderRow,
   extractAddresses,
   toExcelRows,
 } from "./excel-io";
+import { ADDR_FIELDS } from "./fields";
 
 describe("detectHeaderRow 表头检测", () => {
   it("含'地址'关键字行 → 返回该行号", () => {

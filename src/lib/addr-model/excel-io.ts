@@ -6,12 +6,8 @@
  */
 import * as XLSX from "xlsx";
 
-/** 27 个地址要素(中文列名,顺序与地址要素字典一致) */
-export const ADDR_FIELDS = [
-  "省份", "城市", "区县", "街道", "镇", "乡", "小区", "村", "子区域",
-  "路", "弄", "支弄", "路号", "楼栋", "楼层", "单元", "室号", "队", "组",
-  "宅", "巷", "方向", "快速路", "高速公路", "位置类型", "兴趣点", "其他",
-] as const;
+import { ADDR_FIELDS, FIELD_KEY_TO_ZH } from "./fields";
+
 
 /** 工作簿读取结果:sheet 名列表(惰性,行数据按需取) */
 export interface WorkbookInfo {
@@ -133,22 +129,13 @@ export function extractAddresses(
 export function toExcelRows(
   results: Array<{ address: string; data: Record<string, unknown> | null }>,
 ): Array<Record<string, string>> {
-  // 模型字段英文 key → 中文(与 ADDR_FIELDS 对齐)
-  const keyToZh: Record<string, string> = {
-    province: "省份", city: "城市", district: "区县", street: "街道", town: "镇",
-    township: "乡", community: "小区", village: "村", subarea: "子区域",
-    road: "路", lane: "弄", sub_lane: "支弄", road_number: "路号", building: "楼栋",
-    floor: "楼层", unit: "单元", room: "室号", team: "队", group: "组",
-    zhai: "宅", alley: "巷", direction: "方向", expressway: "快速路",
-    highway: "高速公路", location_type: "位置类型", poi: "兴趣点", other: "其他",
-  };
   return results.map((r) => {
     const row: Record<string, string> = { "源地址": r.address };
     for (const zh of ADDR_FIELDS) row[zh] = "";
     if (r.data) {
       for (const [k, v] of Object.entries(r.data)) {
         if (v == null) continue;
-        const zh = keyToZh[k];
+        const zh = FIELD_KEY_TO_ZH[k];
         if (zh) row[zh] = toText(v);
       }
     }

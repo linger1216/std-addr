@@ -45,6 +45,29 @@ export function resolveModelServiceUrl(
 }
 
 /**
+ * 读取全部系统设置(key → value 映射)。
+ * @param findMany sysSetting 查询函数(Prisma 或测试 mock)
+ */
+export async function loadSettingsMap(
+  findMany: () => Promise<Array<{ key: string; value: unknown }>>,
+): Promise<Record<string, unknown>> {
+  const rows = await findMany();
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+/**
+ * 从 DB 读取模型服务 URL(DB model.serviceUrl → env ML_SERVICE_URL → 默认)。
+ * settings / addr-model 两个 router 共用。
+ */
+export async function readModelServiceUrl(
+  findMany: () => Promise<Array<{ key: string; value: unknown }>>,
+  envValue: string | undefined,
+): Promise<string> {
+  const settings = await loadSettingsMap(findMany);
+  return resolveModelServiceUrl(settings["model.serviceUrl"], envValue);
+}
+
+/**
  * 健康检查:fetch `${base}/api/health`,超时 5s。
  * @param fetcher 可注入 fetch(测试用),默认全局 fetch
  */

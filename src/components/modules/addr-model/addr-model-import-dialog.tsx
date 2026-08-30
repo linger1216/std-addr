@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Play } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +20,7 @@ import {
   detectHeaderRow,
   extractAddresses,
   readWorkbook,
+  type WorkbookInfo,
 } from "@/lib/addr-model/excel-io";
 
 /**
@@ -38,6 +39,8 @@ export function AddrModelImportDialog({
   onImport: (addresses: string[]) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  /** 已解析的工作簿缓存(避免切 sheet 时重复读文件) */
+  const workbookRef = useRef<WorkbookInfo | null>(null);
   const [sheets, setSheets] = useState<string[]>([]);
   const [sheet, setSheet] = useState<string>("");
   const [rows, setRows] = useState<string[][]>([]);
@@ -55,6 +58,7 @@ export function AddrModelImportDialog({
       setHeaderRow(null);
       setColIndex(0);
       setParsing(false);
+      workbookRef.current = null;
     }
   }, [open]);
 
@@ -69,6 +73,7 @@ export function AddrModelImportDialog({
     setFile(file);
     try {
       const info = await readWorkbook(file);
+      workbookRef.current = info;
       setSheets(info.sheets);
       const first = info.sheets[0] ?? "";
       setSheet(first);
@@ -90,14 +95,12 @@ export function AddrModelImportDialog({
 
   function handleSheetChange(v: string) {
     setSheet(v);
-    if (!file) return;
-    void (async () => {
-      const info = await readWorkbook(file);
-      const r = info.rowsOf(v);
-      setRows(r);
-      setHeaderRow(detectHeaderRow(r));
-      setColIndex(0);
-    })();
+    const info = workbookRef.current;
+    if (!info) return;
+    const r = info.rowsOf(v);
+    setRows(r);
+    setHeaderRow(detectHeaderRow(r));
+    setColIndex(0);
   }
 
   /** 预览前 5 行(按当前选择的列) */
