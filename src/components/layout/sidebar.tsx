@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BookMarked,
   BrainCircuit,
+  Layers,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -32,6 +33,7 @@ const iconMap: Record<string, LucideIcon> = {
   settings: Settings,
   "sliders-horizontal": SlidersHorizontal,
   "brain-circuit": BrainCircuit,
+  layers: Layers,
   users: Users,
   shield: Shield,
   menu: MenuIcon,
