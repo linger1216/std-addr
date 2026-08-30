@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   BookMarked,
+  BrainCircuit,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   Menu as MenuIcon,
   Settings,
   Shield,
+  SlidersHorizontal,
   Trees,
   TreePine,
   Users,
@@ -28,6 +30,8 @@ import { cn } from "@/lib/utils";
 const iconMap: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard,
   settings: Settings,
+  "sliders-horizontal": SlidersHorizontal,
+  "brain-circuit": BrainCircuit,
   users: Users,
   shield: Shield,
   menu: MenuIcon,

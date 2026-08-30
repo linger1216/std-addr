@@ -258,3 +258,14 @@ model AddressMockRule {
     @@index([status])
     @@map("label_mock_rule")
 }
+
+// ─── 系统设置 ──────────────────────────────────────
+// key-value 配置表:系统名称/描述(sys.name/sys.description)、
+// 模型服务 URL(model.serviceUrl,地址解析模型 API 端口)。
+model SysSetting {
+    key       String   @id
+    value     Json?
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@map("sys_setting")
+}

@@ -10,6 +10,8 @@ import { roleRouter } from "@/server/api/routers/role";
 import { userRouter } from "@/server/api/routers/user";
 import { regionRouter } from "@/server/api/routers/region";
 import { addrSimRouter } from "@/server/api/routers/addr-sim";
+import { settingsRouter } from "@/server/api/routers/settings";
+import { addrModelRouter } from "@/server/api/routers/addr-model";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
 /**
@@ -30,6 +32,8 @@ export const appRouter = createTRPCRouter({
   region: regionRouter,
   label: labelRouter,
   addrSim: addrSimRouter,
+  settings: settingsRouter,
+  addrModel: addrModelRouter,
 });
 
 // export type definition of API
