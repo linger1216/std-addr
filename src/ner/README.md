@@ -15,7 +15,7 @@ label/exported/*.json(Label Studio 标注)+ 根 .env 的 DATABASE_URL → DB lab
 data/train.json · val.json · tag2id.json · labels.json
       │  Step 2:uv run python -m train.train(读 base/ 预训练模型)
       ▼
-model/best_model.pt(最佳)+ model/epochs/epoch_NN.pt(每轮)
+model/best_model.pt(唯一保存,可续训)
       │  Step 3:service.predict(AddressParser 按 checkpoint 超参重建)
       ▼
 Step 4:service.service(FastAPI:/api/health · /api/format · /api/batch_format)
@@ -124,7 +124,7 @@ Using device: mps
 Train size: 200, Val size: 50
 Number of tags: 55
 Epoch 1/1: ... loss=...
-Epoch 1: saved checkpoint → data/_smoke_model/epochs/epoch_01.pt
+Epoch 1: Saved best model with Entity F1=0.1234 → data/_smoke_model/best_model.pt
 Epoch 1: Loss=..., P=..., R=..., F1=...
 Saved best model with F1=... → data/_smoke_model/best_model.pt
 Training complete! Best F1: ...
@@ -140,8 +140,7 @@ uv run python -m train.train                      # 默认参数(20 epoch,全量
 # 常用调参:
 uv run python -m train.train --epochs 10 --batch_size 16 --max_length 128 --patience 3
 uv run python -m train.train --patience 5         # 早停:实体 F1 连续 5 轮不升则停
-uv run python -m train.train --resume model/epochs/epoch_08.pt   # 从检查点续训(恢复优化器/学习率曲线/早停计数)
-uv run python -m train.train --save_epochs 0      # 只存 best,不存每轮(省磁盘)
+uv run python -m train.train --resume model/best_model.pt   # 从 best 续训(恢复优化器/学习率曲线/早停计数)
 ```
 
 **产物**:
@@ -150,7 +149,7 @@ uv run python -m train.train --save_epochs 0      # 只存 best,不存每轮(省
 model/
 ├── best_model.pt              # 验证集实体级 F1 最优检查点
 ├── epochs/
-│   └── epoch_01.pt …          # 每轮检查点(约 400MB/份,--save_epochs 0 关闭)
+│   └── best_model.pt          # 唯一保存:验证集实体 F1 最优(可续训)
 └── training_log.jsonl         # 每轮训练日志(loss/P/R/F1/实体F1/lr,JSONL)
 ```
 
@@ -283,7 +282,7 @@ src/ner/
 | `--resume` | — | 从检查点续训;恢复优化器/调度器状态(学习率曲线与早停计数连续) |
 | `--device` | 自动 | 显式指定 cuda / mps / cpu |
 | `--num_workers` | 0 | DataLoader 加载进程数 |
-| `--save_epochs` | 1 | 0=只存 best(每份约 400MB,注意磁盘) |
+| ~~`--save_epochs`~~ | - | 已移除:只保存 best_model.pt,不保存每轮检查点 |
 | `--data` / `--output_dir` | data/ / model/ | 数据 / 产物目录 |
 | `--bert_model` | base/chinese-roberta-wwm-ext | 预训练模型(本地) |
 | `--seed` | 42 | 随机种子 |
@@ -297,7 +296,7 @@ src/ner/
 - **数据库不可用**:`train.data` / `train.train` 会报错;若已有 `data/labels.json` 缓存,
   `core.db` 会告警后降级使用缓存(可离线训练)。
 - **预测结果乱码/空字段**:冒烟模型(1 epoch)无业务价值,请先完成正式训练。
-- **磁盘不足**:`--save_epochs 0` 只保留 best_model.pt。
+- **磁盘不足**:训练只保存 best_model.pt(约 400MB/份),已无每轮检查点占用。
 - **新增标签**:在 DB `label` 表增加记录(status=1)后,重新执行 Step 1 再训练。
 - **换机器**:重新下载 `base/chinese-roberta-wwm-ext` 放入 base/ 目录(已在 .gitignore)。
 - **安全**:旧脚本曾硬编码 Label Studio API Key 进入 git 历史,请到 LS 后台**轮换该 Key**。

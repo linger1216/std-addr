@@ -19,9 +19,8 @@ EXPORTED_DIR = NER_ROOT / "label" / "exported"
 # 数据产物目录(data.py 切分输出:train/val/tag2id/labels.json)
 DATA_DIR = NER_ROOT / "data"
 
-# 模型产物目录(train.py 输出:best_model.pt + epochs/)
+# 模型产物目录(train.py 输出:best_model.pt)
 MODEL_DIR = NER_ROOT / "model"
 
-# 最佳模型 / 每轮检查点
+# 最佳模型(唯一保存,可续训)
 BEST_MODEL_PATH = MODEL_DIR / "best_model.pt"
-EPOCHS_DIR = MODEL_DIR / "epochs"

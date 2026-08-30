@@ -11,12 +11,10 @@
     uv run python -m train.train                                # 读 data/,输出 model/
     uv run python -m train.train --epochs 10 --batch_size 16    # 调参
     uv run python -m train.train --patience 5                   # 早停:F1 连续 5 轮不升则停
-    uv run python -m train.train --resume model/epochs/epoch_08.pt  # 从检查点续训
-    uv run python -m train.train --save_epochs 0                # 只存 best,不存每轮检查点
+    uv run python -m train.train --resume model/best_model.pt  # 从 best 续训(超参与 tag2id 取自检查点)
 
 产物:
-    model/best_model.pt            验证集实体级 F1 最优检查点
-    model/epochs/epoch_NN.pt       每轮检查点(含全部超参,可 --resume 续训)
+    model/best_model.pt            验证集实体级 F1 最优检查点(唯一保存;含超参+optimizer/scheduler,可续训)
     model/training_log.jsonl       每轮训练日志(loss / P / R / F1 / 实体 F1 / lr)
 """
 
@@ -75,16 +73,10 @@ def parse_args():
         help="早停:验证集实体 F1 连续 N 轮不提升则停止(0=关闭)",
     )
     parser.add_argument(
-        "--save_epochs",
-        type=int,
-        default=1,
-        help="是否保存每轮检查点(1=存到 model/epochs/,0=只存 best;每份约 400MB,注意磁盘)",
-    )
-    parser.add_argument(
         "--resume",
         type=str,
         default=None,
-        help="从指定检查点续训(如 model/epochs/epoch_08.pt),超参与 tag2id 取自检查点",
+        help="从指定检查点续训(如 model/best_model.pt),超参与 tag2id 取自检查点",
     )
 
     return parser.parse_args()
@@ -242,9 +234,6 @@ def train():
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    epochs_dir = output_dir / "epochs"
-    if args.save_epochs:
-        epochs_dir.mkdir(parents=True, exist_ok=True)
     log_path = output_dir / "training_log.jsonl"
 
     # 标签映射:来自 DB label 表(core.db,缓存 data/labels.json)
@@ -422,15 +411,8 @@ def train():
         else:
             print(f"\nEpoch {epoch + 1}: Loss={avg_loss:.4f}")
 
-        # 每轮检查点(需求:model/ 下保留每 epoch 模型;评估后保存,含本轮 best/no_improve)
-        if args.save_epochs:
-            epoch_path = epochs_dir / f"epoch_{epoch + 1:02d}.pt"
-            save_checkpoint(
-                model, train_dataset.tag2id, epoch_path, hyper,
-                epoch=epoch + 1, optimizer=optimizer, scheduler=scheduler,
-                best_f1=best_f1, no_improve=no_improve,
-            )
-            print(f"Saved checkpoint → {epoch_path}")
+        # 只保存 best(验证集实体 F1 最优),不保存每轮检查点;best 已含 optimizer/scheduler,
+        # 续训直接 --resume model/best_model.pt(超参与 tag2id 取自检查点)
 
         # 早停
         if args.patience > 0 and no_improve >= args.patience:

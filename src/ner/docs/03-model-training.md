@@ -82,15 +82,15 @@ uv run python -m train.train \
 uv run python -m train.train --patience 5
 
 # 从检查点续训(恢复优化器/调度器状态,学习率曲线与早停计数连续)
-uv run python -m train.train --resume model/epochs/epoch_08.pt
+uv run python -m train.train --resume model/best_model.pt
 
 # 只存 best,不存每轮检查点(省磁盘,每份约 400MB)
-uv run python -m train.train --save_epochs 0
+uv run python -m train.train   # 只保存 best_model.pt
 ```
 
 - 设备自动选择:`cuda` → `mps`(mac)→ `cpu`(可 `--device` 显式指定);
 - 评估以**实体级 F1** 为准(BIO 切分为实体集合),字符级 F1 作参考;
-- 产物:`model/best_model.pt`(实体 F1 最优)+ `model/epochs/epoch_NN.pt`(每轮检查点,可 `--resume` 续训)+ `model/training_log.jsonl`(每轮日志);
+- 产物:`model/best_model.pt`(唯一保存:实体 F1 最优,可 `--resume` 续训)+ `model/training_log.jsonl`(每轮日志);
 - checkpoint 内含全部超参(tag2id / num_tags / lstm_hidden / lstm_layers / dropout / max_length / bert_model_name),推理端据此重建。
 
 ## 可选参数
@@ -103,7 +103,7 @@ uv run python -m train.train --save_epochs 0
 | `--crf_lr` | 1e-4 | CRF 层学习率 |
 | `--max_length` | 128 | 最大序列长度 |
 | `--bert_model` | base/chinese-roberta-wwm-ext | 预训练模型路径 |
-| `--save_epochs` | 1 | 0=只存 best,不存每轮检查点 |
+| ~~`--save_epochs`~~ | - | 已移除:只保存 best_model.pt(含超参+optimizer/scheduler,可续训) |
 | `--patience` | 0 | 早停:实体 F1 连续 N 轮不提升则停止(0=关闭) |
 | `--resume` | — | 从检查点续训 |
 | `--device` | 自动 | 显式指定 cuda / mps / cpu |
@@ -116,7 +116,7 @@ uv run python -m train.train --save_epochs 0
 model/
 ├── best_model.pt              # 验证集 F1 最优检查点
 └── epochs/
-    └── epoch_01.pt …          # 每轮检查点(--save_epochs 0 关闭)
+    └── best_model.pt          # 唯一保存:验证集实体 F1 最优(可续训)
 ```
 
 检查点内容:
