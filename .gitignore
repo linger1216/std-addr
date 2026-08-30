@@ -98,3 +98,33 @@ package-lock.json
 
 .agent-teams
 design/
+
+# ─── 数据资源(均不上传,本地保留) ────────────────
+# 电子表格 / 数据集
+*.xlsx
+*.xls
+*.csv
+*.zip
+*.7z
+*.db
+
+# 数据源文件(scripts 一次导入用,数据已入库)
+scripts/region.json
+scripts/community-address.txt
+
+# ─── Python / uv (src/ner 地址 NER 工程) ────────────
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# 预训练模型(393MB,不入库;换机需从 HuggingFace 重新下载)
+src/ner/base/
+
+# 训练产物 / 数据产物(不入库)
+src/ner/model/
+src/ner/data/
+
+# 标注数据(Label Studio 导出,数据资源不上传)
+src/ner/label/exported/
