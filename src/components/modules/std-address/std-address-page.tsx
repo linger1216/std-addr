@@ -209,10 +209,10 @@ export function StdAddressPage() {
   }
 
   // —— 9. 导出 / 导入 套件 ——
+  // 导入只收"原始地址"一列(参考 addr-model 的导入形态):
+  // 标准地址/评分不手工填,入库后由列表「批量标准化」统一生成
   type ImportRowInput = {
     rawAddress: string;
-    stdAddress?: string;
-    stdScore?: number;
   };
   type ImportInput = { rows: ImportRowInput[]; autoStandardize: boolean };
 
@@ -243,14 +243,11 @@ export function StdAddressPage() {
         })),
       }),
     importFields: [
+      // 模板只有一列:原始地址(列头兼容 "原始地址" / "rawAddress")
       { key: "rawAddress", label: "原始地址", required: true, width: 44 },
-      { key: "stdAddress", label: "标准地址", width: 44 },
-      { key: "stdScore", label: "标准评分", width: 12 },
     ],
     coerceRow: (r) => ({
       rawAddress: r.rawAddress ?? "",
-      stdAddress: r.stdAddress !== "" ? r.stdAddress : undefined,
-      stdScore: r.stdScore === "" ? undefined : Number(r.stdScore),
     }),
     // 导入仅落原始地址;批量标准化交给列表「批量标准化」按钮(避免大文件逐条调 ML 超时)
     wrapInput: (rows) => ({ rows, autoStandardize: false }),
