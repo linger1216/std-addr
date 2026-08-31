@@ -10,11 +10,16 @@ import { createQueryParamsStore } from "@/store/use-query-params";
 export type StdAddressQueryParams = {
   q: string;
   status: "" | "0" | "1";
+  /** 评分区间筛选(空串 = 不限) */
+  scoreMin: string;
+  scoreMax: string;
 };
 
 export const EMPTY_STD_ADDRESS_QUERY_PARAMS: StdAddressQueryParams = {
   q: "",
   status: "",
+  scoreMin: "",
+  scoreMax: "",
 };
 
 export const useStdAddressQueryParams = createQueryParamsStore(

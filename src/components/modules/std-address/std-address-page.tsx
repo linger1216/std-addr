@@ -158,6 +158,8 @@ export function StdAddressPage() {
         filters.status === ""
           ? undefined
           : (Number(filters.status) as 0 | 1),
+      scoreMin: scoreFilter(filters.scoreMin),
+      scoreMax: scoreFilter(filters.scoreMax),
       sort: state.sorting.length > 0
         ? state.sorting.map((sx) => ({
             id: sx.id as StdAddressSortId,
@@ -175,7 +177,7 @@ export function StdAddressPage() {
   // 切换筛选 → 回第一页
   useEffect(() => {
     actions.setPage(1);
-  }, [filters.q, filters.status, actions]);
+  }, [filters.q, filters.status, filters.scoreMin, filters.scoreMax, actions]);
 
   // —— 6. table 实例(选中/分页/排序统一)——
   const rows: StdAddressRow[] = listData?.items ?? [];
@@ -261,6 +263,8 @@ export function StdAddressPage() {
           filters.status === ""
             ? undefined
             : (Number(filters.status) as 0 | 1),
+        scoreMin: scoreFilter(filters.scoreMin),
+        scoreMax: scoreFilter(filters.scoreMax),
         sort: state.sorting.map((sx) => ({
           id: sx.id as StdAddressSortId,
           desc: sx.desc,
@@ -441,4 +445,12 @@ function scoreToExcel(value: unknown): string {
   if (value === null || value === undefined || value === "") return "";
   const n = Number(value);
   return Number.isNaN(n) ? "" : n.toFixed(1);
+}
+
+/** 评分筛选输入 → 数字;空串 / 非法输入 → undefined(不限) */
+function scoreFilter(v: string | undefined): number | undefined {
+  const trimmed = (v ?? "").trim();
+  if (trimmed === "") return undefined;
+  const n = Number(trimmed);
+  return Number.isNaN(n) ? undefined : n;
 }

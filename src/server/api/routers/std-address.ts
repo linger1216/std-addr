@@ -23,6 +23,9 @@ const listInput = z.object({
   pageSize: z.number().int().min(1).max(200).default(20),
   keyword: z.string().trim().optional(),
   status: z.union([z.literal(0), z.literal(1)]).optional(),
+  // 评分区间筛选(0-10;min/max 可单独出现)
+  scoreMin: z.number().min(0).max(10).optional(),
+  scoreMax: z.number().min(0).max(10).optional(),
   sort: z
     .array(
       z.object({
@@ -45,6 +48,8 @@ const stdAddressImportRow = z.object({
 function buildWhere(input: {
   keyword?: string;
   status?: 0 | 1;
+  scoreMin?: number;
+  scoreMax?: number;
 }): Prisma.StdAddressWhereInput {
   const where: Prisma.StdAddressWhereInput = {};
   if (input.status !== undefined) where.status = input.status;
@@ -53,6 +58,13 @@ function buildWhere(input: {
       { rawAddress: { contains: input.keyword } },
       { stdAddress: { contains: input.keyword } },
     ];
+  }
+  // 评分区间:min/max 任一存在即组合成 Decimal 区间过滤
+  if (input.scoreMin !== undefined || input.scoreMax !== undefined) {
+    where.stdScore = {
+      ...(input.scoreMin !== undefined ? { gte: input.scoreMin } : {}),
+      ...(input.scoreMax !== undefined ? { lte: input.scoreMax } : {}),
+    };
   }
   return where;
 }
@@ -89,6 +101,8 @@ export const stdAddressRouter = createTRPCRouter({
       z.object({
         keyword: listInput.shape.keyword,
         status: listInput.shape.status,
+        scoreMin: listInput.shape.scoreMin,
+        scoreMax: listInput.shape.scoreMax,
         sort: listInput.shape.sort,
       }),
     )

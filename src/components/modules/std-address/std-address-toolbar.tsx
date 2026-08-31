@@ -95,6 +95,40 @@ export function StdAddressToolbar({
           triggerClassName="min-w-40"
         />
 
+        {/* 评分区间筛选:最低分 ~ 最高分,Enter 生效 */}
+        <div className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-2 py-1">
+          <span className="text-[12px] text-muted-foreground">评分</span>
+          <Input
+            value={draft.scoreMin}
+            onChange={(e) => patchDraft({ scoreMin: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+            }}
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            placeholder="最低"
+            aria-label="最低评分"
+            className="h-7 w-16 border-transparent px-2 text-[12.5px]"
+          />
+          <span className="text-[12px] text-muted-foreground">~</span>
+          <Input
+            value={draft.scoreMax}
+            onChange={(e) => patchDraft({ scoreMax: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+            }}
+            type="number"
+            min={0}
+            max={10}
+            step={0.1}
+            placeholder="最高"
+            aria-label="最高评分"
+            className="h-7 w-16 border-transparent px-2 text-[12.5px]"
+          />
+        </div>
+
         <Button variant="outline" size="sm" onClick={reset}>
           <RotateCcw className="size-3.5" />
           重置
