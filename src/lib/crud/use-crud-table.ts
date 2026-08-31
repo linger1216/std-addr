@@ -148,5 +148,7 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
      * getState 等方法在运行时不可调用。
      */
     columnSizing,
+    /** 列宽更新 setter(函数式 updater);供表头拖拽手柄写回 */
+    onColumnSizingChange: setColumnSizing,
   };
 }

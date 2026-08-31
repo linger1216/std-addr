@@ -193,11 +193,15 @@ export const VillageTable = memo(function VillageTable({
   isLoading,
   callbacks,
   columnSizing,
+  onColumnSizingChange,
 }: {
   table: ReturnType<typeof useAppTable<VillageRow>>;
   isLoading: boolean;
   callbacks: VillageRowCallbacks;
   columnSizing: Record<string, number>;
+  onColumnSizingChange: (
+    updater: (prev: Record<string, number>) => Record<string, number>,
+  ) => void;
 }) {
   // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取。
   // ponytail: 用 ref 持有同一对象,首次渲染把 meta 注入到 table.options,
@@ -233,7 +237,12 @@ export const VillageTable = memo(function VillageTable({
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
               {hg.headers.map((header) => (
-                <HeaderCell key={header.id} header={header} columnSizing={columnSizing} />
+                <HeaderCell
+                key={header.id}
+                header={header}
+                columnSizing={columnSizing}
+                onColumnSizingChange={onColumnSizingChange}
+              />
               ))}
             </TableRow>
           ))}
@@ -261,7 +270,17 @@ export const VillageTable = memo(function VillageTable({
 
 /** 表头单元格(排序 + 点击) */
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
-function HeaderCell({ header, columnSizing }: { header: any; columnSizing: Record<string, number> }) {
+function HeaderCell({
+  header,
+  columnSizing,
+  onColumnSizingChange,
+}: {
+  header: any;
+  columnSizing: Record<string, number>;
+  onColumnSizingChange: (
+    updater: (prev: Record<string, number>) => Record<string, number>,
+  ) => void;
+}) {
   const meta = header.column.columnDef.meta;
   const canSort = header.column.getCanSort();
   const sorted = header.column.getIsSorted();
@@ -290,7 +309,7 @@ function HeaderCell({ header, columnSizing }: { header: any; columnSizing: Recor
           {canSort && <SortIcon sorted={sorted} />}
         </div>
       )}
-      <TableResizeHandle column={header.column} />
+      <TableResizeHandle columnId={header.column.id} onChange={onColumnSizingChange} />
     </TableHead>
   );
 }

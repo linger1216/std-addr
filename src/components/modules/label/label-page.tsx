@@ -136,7 +136,7 @@ export function LabelPage() {
 
   const columns = useMemo(() => createLabelColumns(), []);
 
-  const { table, selectedIds, columnSizing } = useCrudTable<LabelRow>({
+  const { table, selectedIds, columnSizing, onColumnSizingChange } = useCrudTable<LabelRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -276,6 +276,7 @@ export function LabelPage() {
           table={table}
           isLoading={listLoading}
           columnSizing={columnSizing}
+          onColumnSizingChange={onColumnSizingChange}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),
