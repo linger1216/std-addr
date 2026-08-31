@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Play, Upload } from "lucide-react";
+import { FileSpreadsheet, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SearchSelect, type SearchSelectOption } from "@/components/ui/search-select";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -25,8 +26,8 @@ import {
 
 /**
  * 标准地址库 · 原始地址导入 Dialog(选列式,交互参考 addr-model):
- *  - 上传 Excel/CSV → 选择 sheet(多 sheet 时)→ 自动检测表头行 → 用户指定地址列 → 导入
- *  - 不限定列名/表头:任何一列都可作为「原始地址」
+ *  - 上传 Excel/CSV → 选择 sheet(多 sheet 时)→ 自动检测表头行 → 用户指定地址列
+ *  - 完整预览:全部行逐条展示,可勾选要进入地址库的记录(默认全选)
  *  - 只导入地址字符串;标准地址与评分由列表「批量标准化」统一生成
  */
 export function StdAddressImportDialog({
@@ -37,7 +38,7 @@ export function StdAddressImportDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  /** 导入地址列表(原始地址,未去重) */
+  /** 导入选中的地址列表(原始地址,未去重) */
   onImport: (addresses: string[]) => void;
   isPending: boolean;
 }) {
@@ -49,6 +50,8 @@ export function StdAddressImportDialog({
   const [headerRow, setHeaderRow] = useState<number | null>(null);
   const [colIndex, setColIndex] = useState<number>(0);
   const [parsing, setParsing] = useState(false);
+  /** 选中的行索引;null = 全选 */
+  const [selected, setSelected] = useState<Set<number> | null>(null);
 
   // 打开重置
   useEffect(() => {
@@ -60,6 +63,7 @@ export function StdAddressImportDialog({
       setHeaderRow(null);
       setColIndex(0);
       setParsing(false);
+      setSelected(null);
       workbookRef.current = null;
     }
   }, [open]);
@@ -69,6 +73,18 @@ export function StdAddressImportDialog({
       columnOptions(rows, headerRow).map((label, i) => ({ value: String(i), label })),
     [rows, headerRow],
   );
+
+  /** 当前列解析出的全部地址(顺序与预览行一致) */
+  const addresses = useMemo(
+    () => extractAddresses(rows, headerRow, colIndex),
+    [rows, headerRow, colIndex],
+  );
+
+  const selectedCount = selected === null ? addresses.length : selected.size;
+
+  function resetSelectionOnDataChange() {
+    setSelected(null);
+  }
 
   async function handleFile(f: File) {
     setParsing(true);
@@ -84,6 +100,7 @@ export function StdAddressImportDialog({
         setRows(r);
         setHeaderRow(detectHeaderRow(r));
         setColIndex(0);
+        resetSelectionOnDataChange();
       } else {
         setRows([]);
       }
@@ -103,27 +120,33 @@ export function StdAddressImportDialog({
     setRows(r);
     setHeaderRow(detectHeaderRow(r));
     setColIndex(0);
+    resetSelectionOnDataChange();
   }
 
-  /** 预览前 5 行(按当前选择的列) */
-  const preview = useMemo(() => {
-    const from = headerRow != null ? headerRow + 1 : 0;
-    return rows.slice(from, from + 5);
-  }, [rows, headerRow]);
+  function toggleSelect(index: number) {
+    setSelected((prev) => {
+      const next = prev ? new Set(prev) : new Set(addresses.map((_, i) => i));
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
 
-  /** 当前列可导入的地址数 */
-  const addressCount = useMemo(() => {
-    if (rows.length === 0) return 0;
-    return extractAddresses(rows, headerRow, colIndex).length;
-  }, [rows, headerRow, colIndex]);
+  function toggleAll(checked: boolean) {
+    // 全选 = null;全不选 = 空集合
+    setSelected(checked ? null : new Set<number>());
+  }
 
   function handleConfirm() {
-    const addresses = extractAddresses(rows, headerRow, colIndex);
-    if (addresses.length === 0) {
-      toast.error("该列没有可用的地址数据");
+    const picked = addresses.filter((_, i) => selected === null || selected.has(i));
+    if (picked.length === 0) {
+      toast.error("请至少选择一条地址");
       return;
     }
-    onImport(addresses);
+    onImport(picked);
   }
 
   return (
@@ -137,7 +160,7 @@ export function StdAddressImportDialog({
         <DialogHeader>
           <DialogTitle>导入原始地址(Excel / CSV)</DialogTitle>
           <DialogDescription>
-            选择包含地址列的工作表并指定地址列;导入后可勾选「批量标准化」生成标准地址。
+            选择地址列后逐条预览,勾选要进入地址库的记录;导入后可勾选「批量标准化」生成标准地址。
           </DialogDescription>
         </DialogHeader>
 
@@ -185,28 +208,69 @@ export function StdAddressImportDialog({
               <span className="text-[12px] text-muted-foreground">地址列</span>
               <SearchSelect
                 value={String(colIndex)}
-                onValueChange={(v) => setColIndex(Number(v))}
+                onValueChange={(v) => {
+                  setColIndex(Number(v));
+                  resetSelectionOnDataChange();
+                }}
                 options={colOptions}
                 placeholder="选择地址列"
                 triggerClassName="min-w-36"
               />
             </div>
-            {/* 预览前 5 行 */}
-            <div className="max-h-36 overflow-y-auto rounded-xl border border-border bg-muted/30 p-2">
-              {preview.map((row, i) => (
-                <div key={i} className="truncate px-1 py-0.5 text-[12px] text-muted-foreground">
-                  {row[colIndex] ?? "(空)"}
+
+            {/* 完整预览 + 勾选(用户决定哪些进入地址库) */}
+            {addresses.length > 0 && (
+              <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-muted/30 p-2">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={selected !== null && selected.size === 0 ? false : selectedCount === addresses.length}
+                      indeterminate={selectedCount > 0 && selectedCount < addresses.length}
+                      onCheckedChange={(v) => toggleAll(Boolean(v))}
+                      aria-label="全选"
+                    />
+                    <span className="text-[12px] text-muted-foreground">
+                      全选 · 已选 {selectedCount} / {addresses.length} 条
+                    </span>
+                  </div>
+                  {selectedCount < addresses.length && (
+                    <button
+                      type="button"
+                      onClick={() => toggleAll(true)}
+                      className="text-[12px] text-primary hover:underline"
+                    >
+                      恢复全选
+                    </button>
+                  )}
                 </div>
-              ))}
-              {preview.length === 0 && (
-                <div className="px-1 py-1 text-[12px] text-muted-foreground/70">
-                  该列暂无数据
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
+                  {addresses.map((addr, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 border-b border-border/40 px-2 py-1 last:border-b-0"
+                    >
+                      <Checkbox
+                        checked={selected === null || selected.has(i)}
+                        onCheckedChange={() => toggleSelect(i)}
+                        aria-label={`选择第 ${i + 1} 条`}
+                        className="mt-0.5 shrink-0"
+                      />
+                      <span className="w-7 shrink-0 text-right font-mono text-[11px] leading-5 text-muted-foreground">
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 break-all text-[12.5px] leading-5 text-foreground">
+                        {addr}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-            <div className="text-[12px] text-muted-foreground">
-              当前列共 {addressCount} 条待导入
-            </div>
+              </div>
+            )}
+            {addresses.length === 0 && (
+              <div className="px-1 py-1 text-[12px] text-muted-foreground/70">
+                该列暂无地址数据
+              </div>
+            )}
           </div>
         )}
 
@@ -214,9 +278,9 @@ export function StdAddressImportDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             取消
           </Button>
-          <Button onClick={handleConfirm} disabled={addressCount === 0 || isPending}>
+          <Button onClick={handleConfirm} disabled={selectedCount === 0 || isPending}>
             <Upload className="size-3.5" />
-            {isPending ? "导入中…" : `导入 ${addressCount} 条`}
+            {isPending ? "导入中…" : `导入 ${selectedCount} 条进入地址库`}
           </Button>
         </DialogFooter>
       </DialogContent>
