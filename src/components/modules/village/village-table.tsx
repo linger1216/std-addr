@@ -231,7 +231,7 @@ export const VillageTable = memo(function VillageTable({
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
               {hg.headers.map((header) => (
-                <HeaderCell key={header.id} header={header} />
+                <HeaderCell key={header.id} header={header} table={table} />
               ))}
             </TableRow>
           ))}
@@ -248,7 +248,7 @@ export const VillageTable = memo(function VillageTable({
             </TableRow>
           ) : (
             table.getRowModel().rows.map((row, index) => (
-              <DataRow key={row.id} row={row} index={index} />
+              <DataRow key={row.id} row={row} index={index} table={table} />
             ))
           )}
         </TableBody>
@@ -259,13 +259,13 @@ export const VillageTable = memo(function VillageTable({
 
 /** 表头单元格(排序 + 点击) */
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
-function HeaderCell({ header }: { header: any }) {
+function HeaderCell({ header, table }: { header: any; table: any }) {
   const meta = header.column.columnDef.meta;
   const canSort = header.column.getCanSort();
   const sorted = header.column.getIsSorted();
   // 用户拖拽调整过(TanStack columnSizing)的列才应用固定宽度,未调整保持原有布局
   const sizedWidth =
-    header.getContext().table.getState().columnSizing?.[header.column.id];
+    table.getState().columnSizing?.[header.column.id];
   return (
     <TableHead
       key={header.id}
@@ -294,7 +294,7 @@ function HeaderCell({ header }: { header: any }) {
 }
 
 /** 数据行:选中状态 + 单元格渲染 + 斑马行(偶数行浅底) */
-function DataRow({ row, index }: { row: any; index: number }) {
+function DataRow({ row, index, table }: { row: any; index: number; table: any }) {
   return (
     <TableRow
       key={row.id}
@@ -305,7 +305,7 @@ function DataRow({ row, index }: { row: any; index: number }) {
       {row.getVisibleCells().map((cell: any) => {
         const meta = cell.column.columnDef.meta;
         const sizedWidth =
-          cell.getContext().table.getState().columnSizing?.[cell.column.id];
+          table.getState().columnSizing?.[cell.column.id];
         return (
           <TableCell
             key={cell.id}
