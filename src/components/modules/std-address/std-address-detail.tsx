@@ -57,12 +57,15 @@ export function StdAddressDetailDialog({
               <StatusBadge status={detail.status} />
             </Row>
 
-            {/* 27 个地址要素:仅展示已命中(非空)的要素 */}
+            {/* 27 个地址要素:全字段展示(空值显示占位符) */}
             {STD_ADDRESS_FIELDS.map(([key, label]) => {
               const v = detail[key as keyof StdAddressDetail];
               const text = typeof v === "string" ? v.trim() : "";
-              if (!text) return null;
-              return <Row key={key} label={label}>{text}</Row>;
+              return (
+                <Row key={key} label={label}>
+                  {text || PLACEHOLDER_EMPTY}
+                </Row>
+              );
             })}
 
             {/* 创建/更新时间约定放字段最后,见 CLAUDE.md §7 */}

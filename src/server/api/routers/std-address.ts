@@ -7,6 +7,11 @@ import {
 import { standardizeService } from "@/server/services/standardizeService";
 import { mapFieldsToPersist } from "@/lib/standardize/persist";
 import { toErrorMessage } from "@/lib/constants";
+import {
+  addressFieldsSchema,
+  STD_ADDRESS_FIELD_KEYS,
+  type StdAddressFieldKey,
+} from "@/lib/validators/std-address";
 import { Prisma } from "../../../../generated/prisma/client";
 
 /** 可排序字段白名单(与表格表头打开的服务端排序对应) */
@@ -176,7 +181,7 @@ export const stdAddressRouter = createTRPCRouter({
       return { done, failed: errors.length, errors };
     }),
 
-  /** 创建(可预填标准结果) */
+  /** 创建(可预填标准结果与地址要素) */
   create: adminProcedure
     .input(
       z.object({
@@ -184,18 +189,23 @@ export const stdAddressRouter = createTRPCRouter({
         stdAddress: z.string().trim().max(500).optional(),
         stdScore: z.number().min(0).max(10).optional(),
         status: z.union([z.literal(0), z.literal(1)]).default(1),
+        ...addressFieldsSchema.shape,
       }),
     )
-    .mutation(({ ctx, input }) =>
-      ctx.db.stdAddress.create({
-        data: {
-          rawAddress: input.rawAddress,
-          stdAddress: input.stdAddress ?? null,
-          stdScore: input.stdScore ?? null,
-          status: input.status,
-        },
-      }),
-    ),
+    .mutation(({ ctx, input }) => {
+      const data: Prisma.StdAddressUncheckedCreateInput = {
+        rawAddress: input.rawAddress,
+        stdAddress: input.stdAddress ?? null,
+        stdScore: input.stdScore ?? null,
+        status: input.status,
+      };
+      // 27 要素:null → 清空,string → 写入(create 无 undefined 语义,统一记 null)
+      const fieldData = data as Record<StdAddressFieldKey, string | null>;
+      for (const key of STD_ADDRESS_FIELD_KEYS) {
+        fieldData[key] = input[key] ?? null;
+      }
+      return ctx.db.stdAddress.create({ data });
+    }),
 
   /** 导入(原始地址列表,逐条可先标准化) */
   import: adminProcedure
@@ -241,13 +251,22 @@ export const stdAddressRouter = createTRPCRouter({
         stdAddress: z.string().trim().max(500).optional(),
         stdScore: z.number().min(0).max(10).optional(),
         status: z.union([z.literal(0), z.literal(1)]).optional(),
+        ...addressFieldsSchema.shape,
       }),
     )
     .mutation(({ ctx, input }) => {
-      const data: Record<string, unknown> = {};
+      const data: Prisma.StdAddressUncheckedUpdateInput = {};
       if (input.stdAddress !== undefined) data.stdAddress = input.stdAddress;
       if (input.stdScore !== undefined) data.stdScore = input.stdScore;
       if (input.status !== undefined) data.status = input.status;
+      // 27 要素:undefined → 不修改;null → 清空;string → 写入
+      const fieldData = data as Record<
+        StdAddressFieldKey,
+        string | null | undefined
+      >;
+      for (const key of STD_ADDRESS_FIELD_KEYS) {
+        if (input[key] !== undefined) fieldData[key] = input[key];
+      }
       return ctx.db.stdAddress.update({ where: { id: input.id }, data });
     }),
 

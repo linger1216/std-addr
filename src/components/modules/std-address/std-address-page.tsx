@@ -214,23 +214,27 @@ export function StdAddressPage() {
   }, [state.editingId, editingData, actions]);
 
   // —— 8. 提交表单:create / update ——
+  // 评分由「批量标准化」自动计算,编辑保存不提交评分;27 要素随表单全量提交
   function handleSubmit(values: StdAddressFormValues) {
-    const stdAddress = values.stdAddress.trim() || undefined;
-    const stdScore =
-      values.stdScore.trim() === "" ? undefined : Number(values.stdScore);
-    if (values.id) {
+    const { id, rawAddress, stdAddress: rawStd, status, ...fieldValues } = values;
+    const stdAddress = rawStd.trim() || undefined;
+    const fields: Record<string, string | null> = {};
+    for (const [k, v] of Object.entries(fieldValues)) {
+      fields[k] = typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+    }
+    if (id) {
       mut.update.mutate({
-        id: values.id,
+        id,
         stdAddress,
-        stdScore,
-        status: values.status,
+        status,
+        ...fields,
       });
     } else {
       mut.create.mutate({
-        rawAddress: values.rawAddress,
+        rawAddress,
         stdAddress,
-        stdScore,
-        status: values.status,
+        status,
+        ...fields,
       });
     }
   }
