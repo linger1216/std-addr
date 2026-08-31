@@ -2,7 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
 import {
@@ -18,7 +18,7 @@ import {
 } from "./std-address-table";
 import { StdAddressToolbar } from "./std-address-toolbar";
 import { StdAddressDetailDialog } from "./std-address-detail";
-import { ExcelImportDialog } from "@/components/modules/shared/excel-import";
+import { StdAddressImportDialog } from "./std-address-import-dialog";
 import {
   Dialog,
   DialogContent,
@@ -122,6 +122,30 @@ export function StdAddressPage() {
     },
     onError: (e) => toast.error(toApiError(e).message),
   });
+
+  // —— 4.6 导入(选列式 dialog,参考 addr-model):只落原始地址 ——
+  const [importOpen, setImportOpen] = useState(false);
+  const importMut = api.stdAddress.import.useMutation({
+    onSuccess: async (res) => {
+      await utils.stdAddress.invalidate();
+      toast.success(
+        res.errors.length > 0
+          ? `已导入 ${res.created} 条 · 失败 ${res.errors.length} 条`
+          : `已导入 ${res.created} 条`,
+      );
+      setImportOpen(false);
+      actions.setPage(1);
+    },
+    onError: (e) => toast.error(toApiError(e).message),
+  });
+
+  function handleImportAddresses(addresses: string[]) {
+    importMut.mutate({
+      rows: addresses.map((a) => ({ rawAddress: a })),
+      // 只落原始地址;标准地址与评分由「批量标准化」统一生成
+      autoStandardize: false,
+    });
+  }
 
   // —— 5. 列表查询 ——
   const listQueryParas = useMemo(
@@ -243,13 +267,13 @@ export function StdAddressPage() {
         })),
       }),
     importFields: [
-      // 模板只有一列:原始地址(列头兼容 "原始地址" / "rawAddress")
+      // Hook 类型必填的最小定义;导入交互实际由 StdAddressImportDialog 承担(选列式),
+      // 此处保留单列模板以兼容固定模板导入场景
       { key: "rawAddress", label: "原始地址", required: true, width: 44 },
     ],
     coerceRow: (r) => ({
       rawAddress: r.rawAddress ?? "",
     }),
-    // 导入仅落原始地址;批量标准化交给列表「批量标准化」按钮(避免大文件逐条调 ML 超时)
     wrapInput: (rows) => ({ rows, autoStandardize: false }),
     importMutation: api.stdAddress.import,
   });
@@ -296,7 +320,7 @@ export function StdAddressPage() {
           selectedCount={selectedIds.length}
           isStandardizing={batchStandardize.isPending}
           onCreate={actions.openCreate}
-          onImport={excel.openImport}
+          onImport={() => setImportOpen(true)}
           onExport={excel.handleExport}
           onBatchDelete={actions.requestBatchDelete}
           onBatchStandardize={handleBatchStandardize}
@@ -344,7 +368,12 @@ export function StdAddressPage() {
         detail={detail}
       />
 
-      <ExcelImportDialog {...excel.importDialogProps} />
+      <StdAddressImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={handleImportAddresses}
+        isPending={importMut.isPending}
+      />
 
       {/* 单条删除 confirm */}
       <Dialog
