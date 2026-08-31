@@ -185,7 +185,7 @@ export function StdAddressPage() {
 
   const columns = useMemo(() => createStdAddressColumns(), []);
 
-  const { table, selectedIds } = useCrudTable<StdAddressRow>({
+  const { table, selectedIds, columnSizing } = useCrudTable<StdAddressRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -336,6 +336,7 @@ export function StdAddressPage() {
         <StdAddressTable
           table={table}
           isLoading={listLoading}
+          columnSizing={columnSizing}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),

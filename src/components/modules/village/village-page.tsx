@@ -144,7 +144,7 @@ export function VillagePage() {
 
   const columns = useMemo(() => createVillageColumns(), []);
 
-  const { table, selectedIds } = useCrudTable<VillageRow>({
+  const { table, selectedIds, columnSizing } = useCrudTable<VillageRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -304,6 +304,7 @@ export function VillagePage() {
         <VillageTable
           table={table}
           isLoading={listLoading}
+          columnSizing={columnSizing}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),

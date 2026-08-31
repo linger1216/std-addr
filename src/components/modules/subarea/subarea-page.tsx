@@ -147,7 +147,7 @@ export function SubareaPage() {
 
   const columns = useMemo(() => createSubareaColumns(), []);
 
-  const { table, selectedIds } = useCrudTable<SubareaRow>({
+  const { table, selectedIds, columnSizing } = useCrudTable<SubareaRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -308,6 +308,7 @@ export function SubareaPage() {
         <SubareaTable
           table={table}
           isLoading={listLoading}
+          columnSizing={columnSizing}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),

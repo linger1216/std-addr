@@ -142,5 +142,11 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
     table: table as any,
     /** 当前选中的行 ID 数组(用于批量删除的 input.ids) */
     selectedIds,
+    /**
+     * 列宽状态(TanStack columnSizing)。
+     * 直接返回而非经 table.getState() 读取:createTableHook 的表实例是代理,
+     * getState 等方法在运行时不可调用。
+     */
+    columnSizing,
   };
 }

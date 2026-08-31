@@ -146,7 +146,7 @@ export function PoiPage() {
 
   const columns = useMemo(() => createPoiColumns(), []);
 
-  const { table, selectedIds } = useCrudTable<PoiRow>({
+  const { table, selectedIds, columnSizing } = useCrudTable<PoiRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -324,6 +324,7 @@ export function PoiPage() {
         <PoiTable
           table={table}
           isLoading={listLoading}
+          columnSizing={columnSizing}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),

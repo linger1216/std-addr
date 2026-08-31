@@ -136,7 +136,7 @@ export function RoadPage() {
 
   const columns = useMemo(() => createRoadColumns(), []);
 
-  const { table, selectedIds } = useCrudTable<RoadRow>({
+  const { table, selectedIds, columnSizing } = useCrudTable<RoadRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -268,6 +268,7 @@ export function RoadPage() {
         <RoadTable
           table={table}
           isLoading={listLoading}
+          columnSizing={columnSizing}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),

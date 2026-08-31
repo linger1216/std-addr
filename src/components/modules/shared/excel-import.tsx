@@ -57,7 +57,12 @@ function parseWorkbook(buffer: ArrayBuffer, fields: ImportField[]): Parsed {
       for (const f of fields) {
         // 同时支持中文列头(f.label)和英文 key(f.key)
         const raw = row[f.label] ?? row[f.key] ?? "";
-        const val = String(raw).trim();
+        // 只接受标量值(string/number/boolean);对象(公式/富单元格)按空处理,
+        // 避免 String(object) 落入 "[object Object]"
+        const val =
+          typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean"
+            ? String(raw).trim()
+            : "";
         out[f.key] = val;
         if (f.required && !val) {
           missingRequired = true;

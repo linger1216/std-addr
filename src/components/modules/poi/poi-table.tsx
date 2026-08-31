@@ -220,10 +220,12 @@ export const PoiTable = memo(function PoiTable({
   table,
   isLoading,
   callbacks,
+  columnSizing,
 }: {
   table: ReturnType<typeof useAppTable<PoiRow>>;
   isLoading: boolean;
   callbacks: PoiRowCallbacks;
+  columnSizing: Record<string, number>;
 }) {
   // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取。
   // ponytail: 用 ref 持有同一对象,首次渲染把 meta 注入到 table.options,
@@ -259,7 +261,7 @@ export const PoiTable = memo(function PoiTable({
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
               {hg.headers.map((header) => (
-                <HeaderCell key={header.id} header={header} table={table} />
+                <HeaderCell key={header.id} header={header} columnSizing={columnSizing} />
               ))}
             </TableRow>
           ))}
@@ -276,7 +278,7 @@ export const PoiTable = memo(function PoiTable({
             </TableRow>
           ) : (
             table.getRowModel().rows.map((row, index) => (
-              <DataRow key={row.id} row={row} index={index} table={table} />
+              <DataRow key={row.id} row={row} index={index} columnSizing={columnSizing} />
             ))
           )}
         </TableBody>
@@ -287,13 +289,13 @@ export const PoiTable = memo(function PoiTable({
 
 /** 表头单元格(排序 + 点击) */
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
-function HeaderCell({ header, table }: { header: any; table: any }) {
+function HeaderCell({ header, columnSizing }: { header: any; columnSizing: Record<string, number> }) {
   const meta = header.column.columnDef.meta;
   const canSort = header.column.getCanSort();
   const sorted = header.column.getIsSorted();
   // 用户拖拽调整过(TanStack columnSizing)的列才应用固定宽度,未调整保持原有布局
   const sizedWidth =
-    table.getState().columnSizing?.[header.column.id];
+    columnSizing[header.column.id];
   return (
     <TableHead
       key={header.id}
@@ -322,7 +324,7 @@ function HeaderCell({ header, table }: { header: any; table: any }) {
 }
 
 /** 数据行:选中状态 + 单元格渲染 + 斑马行(偶数行浅底) */
-function DataRow({ row, index, table }: { row: any; index: number; table: any }) {
+function DataRow({ row, index, columnSizing }: { row: any; index: number; columnSizing: Record<string, number> }) {
   return (
     <TableRow
       key={row.id}
@@ -332,7 +334,7 @@ function DataRow({ row, index, table }: { row: any; index: number; table: any })
       {row.getVisibleCells().map((cell: any) => {
         const meta = cell.column.columnDef.meta;
         const sizedWidth =
-          table.getState().columnSizing?.[cell.column.id];
+          columnSizing[cell.column.id];
         return (
           <TableCell
             key={cell.id}

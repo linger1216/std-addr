@@ -147,7 +147,7 @@ export function CommunityPage() {
 
   const columns = useMemo(() => createCommunityColumns(), []);
 
-  const { table, selectedIds } = useCrudTable<CommunityRow>({
+  const { table, selectedIds, columnSizing } = useCrudTable<CommunityRow>({
     data: rows,
     columns,
     getRowId: (r) => r.id,
@@ -308,6 +308,7 @@ export function CommunityPage() {
         <CommunityTable
           table={table}
           isLoading={listLoading}
+          columnSizing={columnSizing}
           callbacks={{
             onView: (row) => actions.openView(row.id),
             onEdit: (row) => actions.openEdit(row.id),
