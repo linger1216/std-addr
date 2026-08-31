@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { flexRender } from "@tanstack/react-table";
@@ -217,13 +217,16 @@ export const StdAddressTable = memo(function StdAddressTable({
   callbacks: StdAddressRowCallbacks;
 }) {
   // 把回调挂到 meta 上,列定义内部通过 table.options.meta 读取。
-  // 用 ref 持有同一对象,首次渲染把 meta 注入到 table.options,
-  // 之后只更新 ref.current.callbacks,避免反复调用 setOptions 触发不必要的重渲染。
+  // 用 ref 持有同一对象,渲染期只更新 ref.current.callbacks(ref 赋值不触发更新);
+  // setOptions 会更新 table 状态,必须在 effect 里调用,
+  // 否则触发 "Cannot update a component while rendering a different component"。
   const metaRef = useRef<{ callbacks: StdAddressRowCallbacks }>({ callbacks });
   metaRef.current.callbacks = callbacks;
-  if (!table.options.meta) {
-    table.setOptions((prev) => ({ ...prev, meta: metaRef.current }));
-  }
+  useEffect(() => {
+    if (!table.options.meta) {
+      table.setOptions((prev) => ({ ...prev, meta: metaRef.current }));
+    }
+  }, [table]);
 
   const headers = table.getHeaderGroups()[0]?.headers;
   const colSpan = headers?.length ?? table.getAllLeafColumns().length;
