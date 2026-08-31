@@ -284,6 +284,56 @@ model Subarea {
     @@map("subarea")
 }
 
+// ─── 标准地址库 ────────────────────────────────────
+// 原始地址 → 标准地址(标准化流水线产物):
+// 27 个地址要素(与 label 表 name 对齐)+ 标准评分(0-10)+ 状态/时间。
+// group 是 MySQL 关键字 → 列名用 group_field(Prisma 字段 groupField + @map)。
+model StdAddress {
+    id          String   @id @default(cuid())
+    // 原始地址
+    rawAddress  String   @map("raw_address")
+    // 标准地址(标准化后)
+    stdAddress  String?  @map("std_address")
+    // 标准评分 0-10(一位小数)
+    stdScore    Decimal? @map("std_score") @db.Decimal(4, 1)
+    // —— 27 个地址要素(label.name 对齐)——
+    province    String?  @map("province")
+    city        String?  @map("city")
+    district    String?  @map("district")
+    street      String?  @map("street")
+    town        String?  @map("town")
+    township    String?  @map("township")
+    community   String?  @map("community")
+    village     String?  @map("village")
+    subarea     String?  @map("subarea")
+    zhai        String?  @map("zhai")
+    road        String?  @map("road")
+    lane        String?  @map("lane")
+    alley       String?  @map("alley")
+    subLane     String?  @map("sub_lane")
+    roadNumber  String?  @map("road_number")
+    building    String?  @map("building")
+    unit        String?  @map("unit")
+    team        String?  @map("team")
+    groupField  String?  @map("group_field")
+    floor       String?  @map("floor")
+    room        String?  @map("room")
+    direction   String?  @map("direction")
+    other       String?  @map("other")
+    poi         String?  @map("poi")
+    expressway  String?  @map("expressway")
+    highway     String?  @map("highway")
+    locationType String? @map("location_type")
+    // 状态:1 启用 / 0 禁用
+    status      Int      @default(1)
+    createdAt   DateTime @default(now()) @map("created_at")
+    updatedAt   DateTime @updatedAt @map("updated_at")
+
+    @@index([status])
+    @@index([createdAt])
+    @@map("std_address")
+}
+
 // ─── 系统设置 ──────────────────────────────────────
 // key-value 配置表:系统名称/描述(sys.name/sys.description)、
 // 模型服务 URL(model.serviceUrl,地址解析模型 API 端口)。
