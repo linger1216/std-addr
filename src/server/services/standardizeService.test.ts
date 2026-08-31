@@ -19,7 +19,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { standardizeService } from "./standardizeService";
+import { clearStandardizeCache, standardizeService } from "./standardizeService";
 
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
@@ -45,15 +45,15 @@ function mlOk(data: Record<string, unknown>): void {
   } as Response);
 }
 
-/** region 树:按查询值(id/code/name)派发,支持社区+子区域两条链 */
+/** region 树:按查询值(id/code/name)派发,主库两级链:居委(level2) → 镇(level1) */
 function regionTree(): Record<string, unknown> {
   return {
-    // 子区域链:闵行区 → 上海市 → 上海市
-    "r-sub": { id: "r-sub", code: "310112sub", name: "闵行区", level: 3, parentCode: "3101" },
-    // 小区链:闵行区 → 上海市 → 上海市
-    r1: { id: "r1", code: "310112", name: "闵行区", level: 3, parentCode: "3101" },
-    "3101": { id: "3101", code: "3101", name: "上海市", level: 2, parentCode: "31" },
-    "31": { id: "31", code: "31", name: "上海市", level: 1, parentCode: null },
+    // 居委(level2)→ 华漕镇(level1)
+    "1254": { id: "1254", code: "310112106001", name: "万博家园居民委员会", level: 2, parentCode: "310112106" },
+    "310112106": { id: "40", code: "310112106", name: "华漕镇", level: 1, parentCode: null },
+    // 居委(level2)→ 浦锦街道(level1)
+    "1770": { id: "1770", code: "310112502001", name: "一品漫城第一居民委员会", level: 2, parentCode: "310112502" },
+    "310112502": { id: "38", code: "310112502", name: "浦锦街道", level: 1, parentCode: null },
   };
 }
 
@@ -67,6 +67,8 @@ function mockRegionTree(tree: Record<string, unknown>) {
 }
 
 beforeEach(() => {
+  // 清空模块级 LRU,避免用例间同地址串扰
+  clearStandardizeCache();
   dbMock.region.findFirst.mockReset().mockResolvedValue(null);
   dbMock.community.findMany.mockReset().mockResolvedValue([]);
   dbMock.poi.findMany.mockReset().mockResolvedValue([]);
@@ -124,31 +126,31 @@ describe("standardizeService 10 步流水线", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1); // 命中缓存,不再调 ML
   });
 
-  it("community 匹配 + 行政路径填充(市级链反查补全省市)", async () => {
+  it("community 匹配 + 行政路径填充(居委→镇 两级链)", async () => {
     mlOk({ community: "阳光花园", building: "16号", room: "701室" });
     dbMock.community.findMany.mockResolvedValue([
-      { id: "c1", name: "阳光花园", regionId: "r1" },
+      { id: "c1", name: "阳光花园", regionId: "1254" },
     ]);
     mockRegionTree(regionTree());
 
     const res = await standardizeService.standardize("阳光花园16号701室");
 
-    // 行政链:闵行区(level3)→ 上海市(level2)→ 上海市(level1);上海市 直辖市去重后 province 清空
-    expect(res.fields.province).toBe("");
-    expect(res.fields.district).toBe("闵行区");
-    expect(res.fields.city).toBe("上海市");
-    expect(res.stdAddress).toBe("上海市闵行区阳光花园16号701室");
-    // 评分:区 1 + 无路无村地标(community)4 + 楼栋 1 + 室 1 = 7
-    expect(res.stdScore).toBe(7);
+    // 行政链:万博家园居民委员会(level2 居委)→ 华漕镇(level1);主库无省市层级
+    expect(res.fields.neighborhood).toBe("万博家园居民委员会");
+    expect(res.fields.town).toBe("华漕镇");
+    expect(res.fields.city).toBeUndefined();
+    expect(res.stdAddress).toBe("华漕镇阳光花园16号701室");
+    // 评分:居委 3 + 无路无村地标(community)4 + 楼栋 1 + 室 1 = 9
+    expect(res.stdScore).toBe(9);
   });
 
   it("community + subarea 双匹配:子区域行政优先,小区行政覆盖", async () => {
     mlOk({ community: "瑞和雅苑", subarea: "壹街区" });
     dbMock.community.findMany.mockResolvedValue([
-      { id: "c2", name: "瑞和雅苑", regionId: "r1" },
+      { id: "c2", name: "瑞和雅苑", regionId: "1254" },
     ]);
     dbMock.subarea.findFirst.mockResolvedValue({
-      id: "s1", name: "壹街区", regionId: "r-sub",
+      id: "s1", name: "壹街区", regionId: "310112106",
     });
     mockRegionTree(regionTree());
 
@@ -156,8 +158,9 @@ describe("standardizeService 10 步流水线", () => {
 
     expect(res.fields.subarea).toBe("壹街区");
     expect(res.fields.community).toBe("瑞和雅苑");
-    expect(res.fields.district).toBe("闵行区");
-    expect(res.fields.city).toBe("上海市");
+    // 子区域填行政(镇),小区再覆盖(居委+镇)
+    expect(res.fields.neighborhood).toBe("万博家园居民委员会");
+    expect(res.fields.town).toBe("华漕镇");
   });
 
   it("cleanFields 逗号拆分:village 后半段兜底给 zhai", async () => {
