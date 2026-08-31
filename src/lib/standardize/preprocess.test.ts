@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeChineseDigit, preprocessRaw } from "./preprocess";
+import {
+  normalizeChineseDigit,
+  normalizeChineseNum,
+  preprocessRaw,
+} from "./preprocess";
 
 describe("preprocessRaw 预处理策略", () => {
   it("去除中文/英文括号及其内容", () => {
@@ -61,5 +65,29 @@ describe("normalizeChineseDigit 中文数字转阿拉伯", () => {
   it("空 → 空串", () => {
     expect(normalizeChineseDigit(null)).toBe("");
     expect(normalizeChineseDigit("")).toBe("");
+  });
+});
+
+describe("normalizeChineseNum 中文数字十位展开(队/组号)", () => {
+  it("十位展开:十二 → 12;二十一 → 21;三十八 → 38", () => {
+    expect(normalizeChineseNum("十二")).toBe("12");
+    expect(normalizeChineseNum("二十一")).toBe("21");
+    expect(normalizeChineseNum("三十八")).toBe("38");
+  });
+
+  it("独立十 → 10;个位数单字替换", () => {
+    expect(normalizeChineseNum("十")).toBe("10");
+    expect(normalizeChineseNum("五")).toBe("5");
+  });
+
+  it("完整队/组串:二十一队 → 21队;十二组 → 12组;十队 → 10队", () => {
+    expect(normalizeChineseNum("二十一队")).toBe("21队");
+    expect(normalizeChineseNum("十二组")).toBe("12组");
+    expect(normalizeChineseNum("十队")).toBe("10队");
+  });
+
+  it("空 → 空串;中文数字保留(非队组号场景不展开十位)", () => {
+    expect(normalizeChineseNum(null)).toBe("");
+    expect(normalizeChineseNum("")).toBe("");
   });
 });

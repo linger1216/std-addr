@@ -42,7 +42,7 @@ export function preprocessRaw(raw: string | null | undefined): string {
   return result;
 }
 
-/** 中文数字/零 → 阿拉伯数字(逐字替换,十位用单字转换不展开:十二 → 1二,旧架构如此) */
+/** 中文数字/零 → 阿拉伯数字(逐字替换,十位不展开:十五 → 十5,旧架构如此) */
 export function normalizeChineseDigit(str: string | null | undefined): string {
   if (!str) return "";
   const map: Record<string, string> = {
@@ -50,4 +50,34 @@ export function normalizeChineseDigit(str: string | null | undefined): string {
     六: "6", 七: "7", 八: "8", 九: "9", 零: "0",
   };
   return str.replace(/[一二三四五六七八九零]/g, (c) => map[c] ?? c);
+}
+
+/**
+ * 中文数字 → 阿拉伯数字(十位展开,旧算法 #normalizeNum 语义)。
+ * 仅用于队/组号等小数值:二十一队 → 21队;十二组 → 12组;十队 → 10队。
+ *
+ * 与旧算法差异:旧算法先替换"十X"(把"二十一"里的"十一"误拆成 11,
+ * 再拼上"二"得 211);此处先处理带十位前缀的"X十Y"(二十一 → 21),
+ * 再处理纯"十X"(十二 → 12),输出规范数字。
+ * 不处理百/千(超出队组号范围,旧算法同样不处理)。
+ */
+export function normalizeChineseNum(str: string | null | undefined): string {
+  if (!str) return "";
+  const map: Record<string, string> = {
+    一: "1", 二: "2", 三: "3", 四: "4", 五: "5",
+    六: "6", 七: "7", 八: "8", 九: "9",
+  };
+  const toDigit = (c: string): string => map[c] ?? c;
+  // 1. X十Y → X0Y(二十一 → 21;三十八 → 38);必须先于"十X",否则"十一"被误拆
+  let result = str.replace(
+    /([一二三四五六七八九])十([一二三四五六七八九])?/g,
+    (_, x: string, y?: string) => `${toDigit(x)}${y ? toDigit(y) : "0"}`,
+  );
+  // 2. 纯"十X" → 1X(十二 → 12;十队 → 1队*;*若十后无可数字,走第 3 步)
+  result = result.replace(/十([一二三四五六七八九])/g, (_, y: string) => `1${toDigit(y)}`);
+  // 3. 独立"十" → 10(十 → 10)
+  result = result.replace(/十/g, "10");
+  // 4. 剩余单字(个位数)
+  result = result.replace(/[一二三四五六七八九]/g, toDigit);
+  return result;
 }

@@ -11,7 +11,7 @@
  *  - Redis 缓存:降级为进程内 LRU
  */
 import { db } from "@/server/db";
-import { preprocessRaw, normalizeChineseDigit } from "@/lib/standardize/preprocess";
+import { preprocessRaw, normalizeChineseDigit, normalizeChineseNum } from "@/lib/standardize/preprocess";
 import { buildStdAddress, type StdFields } from "@/lib/standardize/build";
 import { calcScore } from "@/lib/standardize/score";
 import { readModelServiceUrl } from "@/lib/settings/model-service";
@@ -185,27 +185,46 @@ async function readMlUrl(): Promise<string> {
   );
 }
 
-/** ML 解析:调 NER /api/format(与旧架构 mlService 一致),返回字段 */
+/** ML 解析:调 NER /api/format(与旧架构 mlService 一致)。
+ * 与旧架构对齐:模型逻辑失败(code !== 0)→ 返回空字段**降级继续**流水线
+ * (拼接出仅含规则字段的标准地址);仅 HTTP/网络层面失败才抛错,
+ * 由调用方按单条错误收集。
+ */
 async function mlParse(cleaned: string): Promise<StdFields> {
   const url = await readMlUrl();
   const base = url.replace(/\/+$/, "");
   const res = await fetch(
     `${base}/api/format?address=${encodeURIComponent(cleaned)}`,
-    { signal: AbortSignal.timeout(10000) },
+    // 旧架构 axios 超时 30s(模型冷启动/长地址耗时);10s 会误杀
+    { signal: AbortSignal.timeout(30000) },
   );
   if (!res.ok) throw new Error(`模型服务异常:HTTP ${res.status}`);
   const body = (await res.json()) as { code?: number; message?: string; data?: StdFields };
-  if (body.code !== 0) throw new Error(`模型解析失败:${body.message ?? ""}`);
+  if (body.code !== 0) {
+    // 模型逻辑失败:降级为空字段(旧架构 code!==0 时 fields = {})
+    return {};
+  }
   return { ...(body.data ?? {}) };
 }
 
-/** 清洗 ML 逗号污染(旧 #cleanFields):行政字段去逗号、building 保留首个 */
+/** 清洗 ML 逗号污染(旧 #cleanFields):
+ * 行政字段去逗号、building 取首个、village/community 逗号拆分(后半段兜底给宅/子区域) */
 function cleanFields(fields: StdFields): void {
   for (const k of ["province", "city", "district", "street", "town", "neighborhood"] as const) {
     if (fields[k]) fields[k] = (fields[k] ?? "").replace(/,/g, "");
   }
   if (fields.building && typeof fields.building === "string" && fields.building.includes(",")) {
     fields.building = fields.building.split(",")[0]!.trim();
+  }
+  if (fields.village && typeof fields.village === "string" && fields.village.includes(",")) {
+    const parts = fields.village.split(",").filter(Boolean).map((s) => s.trim());
+    fields.village = parts[0] ?? "";
+    if (parts[1] && !fields.zhai) fields.zhai = parts[1];
+  }
+  if (fields.community && typeof fields.community === "string" && fields.community.includes(",")) {
+    const parts = fields.community.split(",").filter(Boolean).map((s) => s.trim());
+    fields.community = parts[0] ?? "";
+    if (parts[1] && !fields.subarea) fields.subarea = parts[1];
   }
   if (fields.road && typeof fields.road === "string") {
     // road 逗号保留(拼接时合并);只清理边界多余逗号
@@ -298,9 +317,9 @@ class StandardizeService {
       delete res.fields.road_number;
     }
 
-    // ====== 4. 中文数字转阿拉伯(team/group) ======
-    if (res.fields.team) res.fields.team = normalizeChineseDigit(res.fields.team);
-    if (res.fields.group) res.fields.group = normalizeChineseDigit(res.fields.group);
+    // ====== 4. 中文数字转阿拉伯(team/group,十位展开) ======
+    if (res.fields.team) res.fields.team = normalizeChineseNum(res.fields.team);
+    if (res.fields.group) res.fields.group = normalizeChineseNum(res.fields.group);
 
     // ====== 5. 上下文推断(向上反查省市) ======
     await this.inferAdmin(res.fields);
