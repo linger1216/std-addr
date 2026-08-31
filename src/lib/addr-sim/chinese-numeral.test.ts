@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { numberToChinese } from "./chinese-numeral";
+import { chineseToNumber, numberToChinese } from "./chinese-numeral";
 
 describe("numberToChinese 数字转中文", () => {
   it("0 返回零", () => {
@@ -56,5 +56,57 @@ describe("numberToChinese 数字转中文", () => {
     expect(() => numberToChinese(100000)).toThrow();
     expect(() => numberToChinese(1.5)).toThrow();
     expect(() => numberToChinese(NaN)).toThrow();
+  });
+});
+
+describe("chineseToNumber 中文转数字", () => {
+  it("个位数", () => {
+    expect(chineseToNumber("零")).toBe(0);
+    expect(chineseToNumber("一")).toBe(1);
+    expect(chineseToNumber("两")).toBe(2);
+    expect(chineseToNumber("二")).toBe(2);
+    expect(chineseToNumber("九")).toBe(9);
+  });
+
+  it("10~19", () => {
+    expect(chineseToNumber("十")).toBe(10);
+    expect(chineseToNumber("十二")).toBe(12);
+    expect(chineseToNumber("十九")).toBe(19);
+  });
+
+  it("20~99", () => {
+    expect(chineseToNumber("二十")).toBe(20);
+    expect(chineseToNumber("二十一")).toBe(21);
+    expect(chineseToNumber("九十九")).toBe(99);
+  });
+
+  it("百位", () => {
+    expect(chineseToNumber("一百")).toBe(100);
+    expect(chineseToNumber("一百零一")).toBe(101);
+    expect(chineseToNumber("一百一十")).toBe(110);
+    expect(chineseToNumber("九百九十九")).toBe(999);
+  });
+
+  it("千位", () => {
+    expect(chineseToNumber("一千")).toBe(1000);
+    expect(chineseToNumber("一千零一")).toBe(1001);
+    expect(chineseToNumber("一千零一十")).toBe(1010);
+    expect(chineseToNumber("九千九百九十九")).toBe(9999);
+  });
+
+  it("trim 容忍前后空白", () => {
+    expect(chineseToNumber("  二十  ")).toBe(20);
+  });
+
+  it("不识别", () => {
+    expect(chineseToNumber("")).toBeNull();
+    expect(chineseToNumber("   ")).toBeNull();
+    expect(chineseToNumber("一万")).toBeNull(); // 万段不支持
+    expect(chineseToNumber("一万二千")).toBeNull();
+    expect(chineseToNumber("十二万")).toBeNull();
+    expect(chineseToNumber("1")).toBeNull(); // 阿拉伯数字不识别
+    expect(chineseToNumber("abc")).toBeNull();
+    expect(chineseToNumber("一二a")).toBeNull();
+    expect(chineseToNumber("第")).toBeNull(); // "第"不是数字字符
   });
 });

@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import type { PrismaClient } from "../../../../generated/prisma/client";
@@ -6,6 +7,7 @@ import {
   createTRPCRouter,
   protectedProcedure,
 } from "@/server/api/trpc";
+import { runReorder } from "./menu/run-reorder";
 
 export type MenuNode = {
   id: string;
@@ -45,6 +47,13 @@ export const menuRouter = createTRPCRouter({
     }),
   ),
 
+  /** 单条菜单详情(编辑表单载入) */
+  getById: adminProcedure
+    .input(z.object({ id: z.string() }))
+    .query(({ ctx, input }) =>
+      ctx.db.menu.findUnique({ where: { id: input.id } }),
+    ),
+
   create: adminProcedure.input(menuInput).mutation(({ ctx, input }) =>
     ctx.db.menu.create({
       data: {
@@ -81,6 +90,21 @@ export const menuRouter = createTRPCRouter({
       await deleteMenuTree(ctx.db, input.id);
       return { ok: true };
     }),
+
+  /**
+   * 同级菜单重排 —— 抽离核心逻辑到 `./menu/run-reorder.ts` 以便单测
+   * (绕开 router → trpc → next-auth 的 import 副作用)。
+   */
+  reorder: adminProcedure
+    .input(
+      z.object({
+        parentId: z.string().nullable(),
+        orderedIds: z.array(z.string()).min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      runReorder(ctx.db, input.parentId, input.orderedIds),
+    ),
 });
 
 type FlatMenu = {

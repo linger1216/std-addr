@@ -59,7 +59,7 @@ export function AddrSimRuleList({
   onQuickAllocate: (pairs: Array<{ id: string; radio: number }>) => void;
 }) {
   const setSelected = useAddrSimActions().setSelected;
-  const [sortMode, setSortMode] = useState<SortMode>("created");
+  const [sortMode, setSortMode] = useState<SortMode>("radio");
   /** 快速分配占比和(选中规则的占比合计,如 60) */
   const [quickTotal, setQuickTotal] = useState("");
 

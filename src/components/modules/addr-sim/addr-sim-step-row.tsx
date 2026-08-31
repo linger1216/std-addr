@@ -251,7 +251,7 @@ function StepRowInner({
                   customValue: { list: entries.map((e) => e.value) },
                 })
               }
-              placeholder="输入候选值后回车添加,如：一号公路"
+              placeholder="输入候选值回车添加;支持 N->M 范围(如 1->9、一->二十)"
               max={Number.POSITIVE_INFINITY}
               enableCopy
             />
@@ -347,12 +347,21 @@ function StepRowInner({
         )}
       </div>
 
-      {/* 前后缀(多值 AliasTagInput + 各自跳过率)+ 整步跳过 */}
-      <div className="mt-2.5 grid gap-3 md:grid-cols-2">
+      {/* 前后缀(多值 TagInput + 业务自己的跳过率)+ 整步跳过 */}
+      <div className="mt-4.5 grid gap-6 md:grid-cols-2">
         <div>
-          <span className="mb-1 block text-[11.5px] font-medium text-muted-foreground">
-            前缀(多值)
-          </span>
+          <div className="flex items-center gap-3 mb-2">
+            <span className="block text-[11.5px] font-medium text-muted-foreground">
+              前缀(多值)
+            </span>
+            <RateSlider
+              className=""
+              label="前缀跳过"
+              value={step.prefix?.skipRate ?? 0}
+              onChange={(v) => patchAffix("prefix", { skipRate: v })}
+            />
+          </div>
+
           <TagInput
             value={(step.prefix?.texts ?? []).map((v) => ({ value: v }))}
             onChange={(entries) =>
@@ -361,14 +370,22 @@ function StepRowInner({
             max={Number.POSITIVE_INFINITY}
             placeholder="回车添加前缀,如：大"
             enableCopy
-            skipRate={step.prefix?.skipRate ?? 0}
-            onSkipRateChange={(v) => patchAffix("prefix", { skipRate: v })}
           />
         </div>
+
         <div>
-          <span className="mb-1 block text-[11.5px] font-medium text-muted-foreground">
-            后缀(多值)
-          </span>
+          <div className="flex items-center gap-3 mb-2">
+            <span className="block text-[11.5px] font-medium text-muted-foreground">
+              后缀(多值)
+            </span>
+            <RateSlider
+              className=""
+              label="后缀跳过"
+              value={step.suffix?.skipRate ?? 0}
+              onChange={(v) => patchAffix("suffix", { skipRate: v })}
+            />
+          </div>
+
           <TagInput
             value={(step.suffix?.texts ?? []).map((v) => ({ value: v }))}
             onChange={(entries) =>
@@ -377,11 +394,10 @@ function StepRowInner({
             max={Number.POSITIVE_INFINITY}
             placeholder="回车添加后缀,如：路"
             enableCopy
-            skipRate={step.suffix?.skipRate ?? 0}
-            onSkipRateChange={(v) => patchAffix("suffix", { skipRate: v })}
           />
         </div>
       </div>
+
       <div className="mt-2.5">
         <RateSlider
           value={step.skipRate}

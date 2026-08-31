@@ -10,6 +10,27 @@
 const DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
 const UNITS = ["", "十", "百", "千"];
 
+/** 字符 → 数值映射;"两"作为"二"的别名(口语常用) */
+const DIGIT_MAP: Record<string, number> = {
+  零: 0,
+  一: 1,
+  两: 2,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+/** 单位字符 → 10 的幂次 */
+const UNIT_MAP: Record<string, number> = {
+  十: 1,
+  百: 2,
+  千: 3,
+};
+
 /** 段内(0~9999)转中文,十位为最高位时省略"一" */
 function sectionToChinese(section: number): string {
   if (section === 0) return "";
@@ -65,4 +86,53 @@ export function numberToChinese(n: number): string {
     out += sectionToChinese(low);
   }
   return out;
+}
+
+/**
+ * 中文 → 数字(0 ~ 9999)。
+ *
+ * 支持的形式:
+ *  - 个位:"一" ~ "九"(0 写作"零";口语"两"作"二"别名)
+ *  - 十位:"十"=10、"十二"、"二十"、"二十一"
+ *  - 百位/千位:同 `numberToChinese` 段内格式,允许"零"穿插("一百零一"=101)
+ *
+ * 不识别(返回 null,让调用方原样保留):
+ *  - 含非中文数字字符(混入阿拉伯数字、英文、符号)
+ *  - 含"万"以上段位(地址场景不需要)
+ *  - 空串 / 纯空白
+ *
+ * 注意:输入"零"返回 0;"空"返回 null。
+ */
+export function chineseToNumber(text: string): number | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  // 含"万"及以上 / 含阿拉伯数字 / 含非汉字符号 → 一律不识别
+  // (允许的字符集:零一二三四五六七八九十百千两)
+  if (!/^[零一二三四五六七八九十百千两]+$/.test(raw)) return null;
+
+  let total = 0;
+  let section = 0; // 当前段(0~9999)累加值
+  let currentDigit = 0;
+
+  for (const ch of raw) {
+    if (ch in DIGIT_MAP) {
+      currentDigit = DIGIT_MAP[ch]!;
+      continue;
+    }
+    if (ch in UNIT_MAP) {
+      const unit = UNIT_MAP[ch]!;
+      // "十" / "百" / "千" 单独出现(无系数)默认按 1 计:"十"=10、"一百"=100
+      const digit = currentDigit === 0 ? 1 : currentDigit;
+      section += digit * 10 ** unit;
+      currentDigit = 0;
+      continue;
+    }
+    // 其它字符(理论不会进入,正则已过滤)
+    return null;
+  }
+  total = section + currentDigit;
+
+  // 范围兜底:超出 0~9999 一律视为不识别
+  if (!Number.isInteger(total) || total < 0 || total > 9999) return null;
+  return total;
 }

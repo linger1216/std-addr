@@ -1,5 +1,5 @@
-import { MenusClient } from "@/components/modules/menus/menus-client";
+import { MenusPage } from "@/components/modules/menus/menus-page";
 
-export default function MenusPage() {
-  return <MenusClient />;
+export default function Page() {
+  return <MenusPage />;
 }

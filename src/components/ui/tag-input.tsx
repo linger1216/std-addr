@@ -10,20 +10,22 @@
  *  - 输入后回车 / 失焦 / 点 + → 加入列表(去空 / 去重),清空输入框
  *  - 草稿展开:`a,b,c` 一次添加 3 条、`["x","y"]` 一次添加 2 条
  *    (逗号分隔 / JSON 数组字符串自动展开;细节见 parseTagDraft)
- *  - 已添加的 Badge 上有 × 按钮,点击删除
+ *  - 已添加的 Badge 上有 × 按钮,点击删除;有值时可一键「清空全部」
  *  - 输入框自身始终保持空白(条目存到列表)
  *  - 达到 max 后禁用添加;展开后超过 max 会被截断
- *  - 可选:复制按钮(值以分隔符拼接复制到剪贴板)、跳过率滑块(条目前后缀场景)
+ *  - 可选:复制按钮(值以分隔符拼接复制到剪贴板)
+ *
+ * 注意:本组件保持业务无关 —— 跳过率等业务概念(addr-sim 前后缀)由
+ * 业务模块自己渲染(参见 addr-sim-step-row 的 RateSlider),不塞进通用控件。
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Copy, Plus, X } from "lucide-react";
+import { Copy, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import { parseTagDraft } from "@/lib/tag-draft";
 
 /** 标签条目(通用形态:仅一个 value 字段) */
@@ -51,8 +53,6 @@ export function TagInput({
   disabled,
   enableCopy,
   copySeparator = ",",
-  skipRate,
-  onSkipRateChange,
 }: {
   value: TagEntry[];
   onChange: (next: TagEntry[]) => void;
@@ -63,10 +63,6 @@ export function TagInput({
   enableCopy?: boolean;
   /** 复制拼接的分隔符,默认英文逗号(若需中文逗号可传 "，") */
   copySeparator?: string;
-  /** 可选:值列表下方显示"跳过率"滑块(前后缀场景用);受控值 */
-  skipRate?: number;
-  /** 跳过率变化回调;不传则不显示滑块 */
-  onSkipRateChange?: (v: number) => void;
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -164,6 +160,17 @@ export function TagInput({
             <Copy className="size-4" />
           </Button>
         )}
+                <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          onClick={commitDraft}
+          disabled={isDisabled || draft.trim() === ""}
+          aria-label="删除"
+          title="删除"
+        >
+          <Trash2 className="size-4" />
+        </Button>
       </div>
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1">
@@ -187,32 +194,6 @@ export function TagInput({
           ))}
         </div>
       )}
-      {onSkipRateChange && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">跳过率</span>
-          <div className="w-28">
-            <Slider
-              value={skipRate ?? 0}
-              min={0}
-              max={100}
-              step={5}
-              onValueChange={(v) =>
-                onSkipRateChange(
-                  Array.isArray(v)
-                    ? Number(v[0] ?? 0)
-                    : (Number(v) || 0),
-                )
-              }
-            />
-          </div>
-          <span className="w-8 shrink-0 text-right text-[11.5px] tabular-nums text-muted-foreground">
-            {skipRate ?? 0}%
-          </span>
-        </div>
-      )}
-      <p className="text-xs text-muted-foreground">
-        已添加 {value.length} / {Number.isFinite(max) ? max : "∞"}
-      </p>
     </div>
   );
 }
