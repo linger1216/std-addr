@@ -11,38 +11,10 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
 import { formatDateTime } from "@/lib/format";
+import { STD_ADDRESS_FIELDS } from "./std-address-fields";
 import type { StdAddressDetail } from "./std-address-form";
 
-/** 27 个地址要素的中文标签(与表列名一一对应) */
-const FIELD_LABELS: Array<[keyof StdAddressDetail, string]> = [
-  ["province", "省"],
-  ["city", "市"],
-  ["district", "区/县"],
-  ["street", "街道"],
-  ["town", "镇"],
-  ["township", "乡"],
-  ["community", "小区/社区"],
-  ["village", "村"],
-  ["subarea", "子区域"],
-  ["zhai", "宅"],
-  ["road", "路"],
-  ["lane", "弄"],
-  ["alley", "巷"],
-  ["subLane", "支弄"],
-  ["roadNumber", "路号"],
-  ["building", "楼栋"],
-  ["unit", "单元"],
-  ["team", "队"],
-  ["groupField", "组"],
-  ["floor", "楼层"],
-  ["room", "室号"],
-  ["direction", "方向"],
-  ["other", "其它"],
-  ["poi", "POI"],
-  ["expressway", "高速"],
-  ["highway", "国道/公路"],
-  ["locationType", "区位类型"],
-];
+/* 27 个地址要素的中文标签来自共享常量(与表格列一致,单一事实来源) */
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -86,8 +58,8 @@ export function StdAddressDetailDialog({
             </Row>
 
             {/* 27 个地址要素:仅展示已命中(非空)的要素 */}
-            {FIELD_LABELS.map(([key, label]) => {
-              const v = detail[key];
+            {STD_ADDRESS_FIELDS.map(([key, label]) => {
+              const v = detail[key as keyof StdAddressDetail];
               const text = typeof v === "string" ? v.trim() : "";
               if (!text) return null;
               return <Row key={key} label={label}>{text}</Row>;

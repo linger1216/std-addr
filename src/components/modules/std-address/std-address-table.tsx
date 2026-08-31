@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { type useAppTable, createAppColumnHelper } from "@/lib/table";
 import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
 import { formatShortDate } from "@/lib/format";
+import { STD_ADDRESS_FIELDS } from "./std-address-fields";
 import type { RouterOutputs } from "@/trpc/react";
 
 /** 表格行 = list procedure 的 item 类型(单一事实来源) */
@@ -28,6 +29,12 @@ export type StdAddressRow =
   RouterOutputs["stdAddress"]["list"]["items"][number];
 
 const columnHelper = createAppColumnHelper<StdAddressRow>();
+
+/**
+ * 列定义顺序:
+ * 选择 → 原始地址 → 标准地址 → 评分 → 状态 → 创建时间 → 27 地址要素(全字段)。
+ * 要素列不参与排序(后端 sort 白名单仅 5 个基础字段),全部紧凑列宽、横向滚动。
+ */
 
 /** 行级回调 —— 通过 column meta 透传给列定义使用 */
 type StdAddressRowCallbacks = {
@@ -103,6 +110,22 @@ export function createStdAddressColumns() {
       ),
       meta: { className: "w-28" },
     }),
+    ...STD_ADDRESS_FIELDS.map(([key, label]) =>
+      columnHelper.accessor(key as keyof StdAddressRow, {
+        header: () => <div className="text-center">{label}</div>,
+        cell: (info) => {
+          const v = info.getValue();
+          return (
+            <span className="text-muted-foreground">
+              {/* 要素列值类型是 string|null(表字段);防御性收窄,非字符串按空显示 */}
+              {typeof v === "string" ? orEmpty(v) : PLACEHOLDER_EMPTY}
+            </span>
+          );
+        },
+        enableSorting: false,
+        meta: { className: "min-w-[96px]" },
+      }),
+    ),
     columnHelper.display({
       id: "actions",
       header: () => <div className="text-center">操作</div>,
@@ -222,7 +245,8 @@ export const StdAddressTable = memo(function StdAddressTable({
           </motion.div>
         )}
       </AnimatePresence>
-      <Table containerClassName="h-full overflow-y-auto">
+      {/* 全字段表格较宽:容器纵横向都可滚动(overflow-auto) */}
+      <Table containerClassName="h-full overflow-auto">
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
