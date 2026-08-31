@@ -19,8 +19,9 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
+  ColumnSizingState,
   RowSelectionState,
   SortingState,
 } from "@tanstack/react-table";
@@ -28,6 +29,21 @@ import { useAppTable } from "@/lib/table";
 
 type SortingUpdater = (old: SortingState) => SortingState;
 type RowSelectionUpdater = (old: RowSelectionState) => RowSelectionState;
+
+/** 列宽持久化的 localStorage 键前缀 */
+const COLUMN_SIZING_PREFIX = "table-column-widths:";
+
+/** 读取持久化列宽(节流由 useEffect 写入承担;解析失败按空处理) */
+function readColumnSizing(storageKey: string): ColumnSizingState {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(COLUMN_SIZING_PREFIX + storageKey);
+    const parsed = raw ? (JSON.parse(raw) as ColumnSizingState) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 export type UseCrudTableOptions<T> = {
   /** 列表数据(分页/筛选后的当前页) */
@@ -53,6 +69,12 @@ export type UseCrudTableOptions<T> = {
   onSortingChange: (next: SortingState | SortingUpdater) => void;
   /** 行选中变化回调 */
   onRowSelectionChange: (next: RowSelectionState | RowSelectionUpdater) => void;
+  /**
+   * 列宽持久化键(如 "std-address")。
+   * 用户拖拽表头调整列宽后写入 localStorage,下次进入保留;
+   * 不传则列宽调整只在当前会话内生效。
+   */
+  storageKey?: string;
 };
 
 export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
@@ -66,15 +88,33 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
     rowSelection,
     onSortingChange,
     onRowSelectionChange,
+    storageKey,
   } = opts;
+
+  // —— 列宽状态(localStorage 持久化;缺省 storageKey 则仅会话内) ——
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() =>
+    storageKey ? readColumnSizing(storageKey) : {},
+  );
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      window.localStorage.setItem(
+        COLUMN_SIZING_PREFIX + storageKey,
+        JSON.stringify(columnSizing),
+      );
+    } catch {
+      // 存储不可用(隐私模式/配额)时静默降级为会话内生效
+    }
+  }, [storageKey, columnSizing]);
 
   const table = useAppTable({
     data: data as never,
     columns,
     getRowId: getRowId as never,
-    state: { sorting, rowSelection },
+    state: { sorting, rowSelection, columnSizing },
     onSortingChange,
     onRowSelectionChange,
+    onColumnSizingChange: setColumnSizing,
     manualSorting: true,
     manualPagination: true,
     pageCount: Math.max(1, Math.ceil(total / pageSize)),
