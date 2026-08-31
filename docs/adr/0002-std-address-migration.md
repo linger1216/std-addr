@@ -45,14 +45,18 @@
 | 缓存 | Redis(`cacheService`,TTL 可配) | 主应用无 Redis 依赖 | 进程内 LRU(1000 条)已兜底;需要多实例共享时可引入 Redis |
 | 调试日志(`includeLogs` 分步明细) | `#log` 全步骤 | 主应用 UI 无调试面板消费者 | 需要时可加 `logs` 字段,纯增量 |
 | 评分建议(`scoreSuggestionService` 缺字段/提分建议) | 独立服务 + Vue 客户端页面 | 主应用 `std-address` 页面暂无此 UI | 以 `calcScore` 口径重实现,属独立 feature |
-| 测试用例运行器(`testCasesService` + 665 行用例) | HTTP 接口 `/test-cases/*` | 用例依赖旧库真实实体(都市阳光花园 id=113 等)+ ML 服务 | 纯逻辑断言已内化为 vitest(预处理/拼接/评分/流水线),实体级回归需真实数据环境 |
+| 测试用例运行器(`testCasesService` + 665 行用例) | HTTP 接口 `/test-cases/*` | 主应用无该调试页面 | **已合并**:75 用例适配为主库实体/两级区划的 62 条 vitest 回归用例,见 §4.1 |
 
 ## 3. 行为修正(旧实现对不完整/有缺陷,移植时修正)
 
 1. **ML 逻辑失败降级**:旧实现 ML 返回 `code !== 0` 时 `fields = {}` **继续**流水线;首版移植直接 throw,会中断整个标准化工序。已对齐旧行为:**仅 HTTP/网络失败抛错**,`code !== 0` 降级继续。
 2. **中文数字十位展开**:旧 `#normalizeNum` 先替换"十X"再"X十"顺序颠倒,`二十一队` 产出 `211队`(把"十一"误拆为 11 再拼 "2")。`normalizeChineseNum` 先处理带十位前缀的 `X十Y`(二十一 → 21)再处理 `十X`(十二 → 12),输出规范数字,并有单测锁定。
 3. **子区域 entity_type**:旧 `#matchSubarea` 查询条件传 `'subarea'`,而表注释/数据的合法值是 `community/poi/village`,旧代码永远查不到。新实现按 `entityType: "community"` 正确匹配。
-4. **subarea 单测修复口径**:社区地址的评分在无居委/街镇时按区县 1 分 + 地标 4 分,已在服务层测试中固化。
+4. **区划层级语义(主库适配,重要)**:
+   - 主库 `region` 表实际数据只有 **level1=街道/镇、level2=居委/村民委员会**,没有省/市/区层级(`parent_code` 仅居委→街镇);
+   - 旧映射表 `LEVEL_TO_FIELD`(1→省…6→居委)会把手级数据错填成省 —— 改为 `regionFieldFor()`:level1 按名称后缀区分 `street(街道)/town(镇/乡)`,level2 → `neighborhood`,预留 3=district、4=street 扩展位;
+   - 行政填充守卫 `hasAnyAdmin()`:旧实现只认"省市区任一非空才赋值",主库下永远不触发 —— 改为任一行政字段(含 街/镇/居委)非空即填充。
+5. **测试缓存隔离**:进程内 LRU 是模块级单例,同 raw 地址的用例会互相命中缓存(如村用例与评分用例)。新增 `clearStandardizeCache()`(仅测试用)在 `beforeEach` 清理,语义无副作用。
 
 ## 4. 测试策略
 
@@ -62,6 +66,15 @@
 | 纯函数 | 拼接/评分/评分明细 | `src/lib/standardize/score.test.ts`(14 条) |
 | 纯函数 | 27 字段写库映射 | `src/lib/standardize/persist.test.ts`(5 条) |
 | 服务层 | 10 步流水线(mock db + mock fetch):全链路/ML 降级/网络错误/缓存命中/community+subarea 行政填充/逗号拆分/中文数字/直辖市去重/空地址 | `src/server/services/standardizeService.test.ts`(10 条) |
+| 回归用例集 | 旧 `test-cases.js` 75 用例 → **62 条**合并(见 §4.1) | `src/server/services/standardize-cases.test.ts` |
+
+### 4.1 用例集合并策略(根据主库现有数据实际情况)
+
+- **区划**:主库无省市区 → 期望无"上海市闵行区"前缀,行政只断言 街/镇/居委;
+- **实体**:小区/POI/村全部取自主库真实数据(万博家园/七韵美地苑/S32小区、836公交终点站、革新村/联星村/镇北村/杨家巷村/华漕村),region 链为真实居委→镇两级;
+- **降级**:路弄号/村号段用例(RL-*/RN-*)断言"无实体填充"行为,待建表后升级;
+- **行为升级**:原"村不在库"(VIL-A4 镇北村)等用例因主库实体存在而转为正常匹配;
+- ML 输出以 mock 字段给定,不依赖真实模型服务;冗余用例(壹~肆街区、双候选、重复评分)合并保留代表。
 
 ## 5. 回滚与影响
 

@@ -47,11 +47,20 @@ class LruCache {
       if (oldest !== undefined) this.map.delete(oldest);
     }
   }
+
+  clear(): void {
+    this.map.clear();
+  }
 }
 
 const cache = new LruCache();
 
-/** 行政区字段(精确匹配上下文用) */
+/** 清空标准化缓存(测试隔离用;生产无副作用) */
+export function clearStandardizeCache(): void {
+  cache.clear();
+}
+
+/** 行政字段(精确匹配上下文用) */
 interface AdminFields {
   province?: string;
   city?: string;
@@ -61,15 +70,26 @@ interface AdminFields {
   neighborhood?: string;
 }
 
-/** 行政层级映射(region.level → 字段) */
-const LEVEL_TO_FIELD = {
-  1: "province",
-  2: "city",
-  3: "district",
-  4: "street",
-  5: "town",
-  6: "neighborhood",
-} as const;
+/**
+ * region 层级 → 行政字段。
+ *
+ * 主库实际数据语义(与旧库不同!):
+ *  - level 1 = 街道/镇(名称后缀区分:镇/乡 → town;街道/其它 → street)
+ *  - level 2 = 居民委员会/村民委员会 → neighborhood
+ *  - 主库无省/市/区层级;预留 3=district、4=province/city 扩展位
+ *    (若后续导入省市数据,需按名称后缀细化)
+ */
+function regionFieldFor(region: { level: number; name: string }): keyof AdminFields | null {
+  const name = region.name;
+  if (region.level === 1) {
+    if (name.endsWith("镇") || name.endsWith("乡")) return "town";
+    return "street";
+  }
+  if (region.level === 2) return "neighborhood";
+  if (region.level === 3) return "district";
+  if (region.level === 4) return "street";
+  return null;
+}
 
 /** 获取 region 的完整祖先链(从当前向上到根);regionId 兼容 id/code 两种存储 */
 async function getRegionAncestors(regionId: string | null | undefined): Promise<[region: unknown, fields: AdminFields]> {
@@ -80,7 +100,7 @@ async function getRegionAncestors(regionId: string | null | undefined): Promise<
   });
   let current = region;
   while (current) {
-    const f = LEVEL_TO_FIELD[current.level as keyof typeof LEVEL_TO_FIELD];
+    const f = regionFieldFor(current);
     if (f) (fields as Record<string, string>)[f] = current.name;
     if (!current.parentCode) break;
     current =
@@ -98,6 +118,16 @@ function matchAdmin(src: AdminFields, dst: AdminFields): boolean {
   if (dst.town && src.town !== dst.town) return false;
   if (dst.neighborhood && src.neighborhood !== dst.neighborhood) return false;
   return true;
+}
+
+/** 行政填充守卫:任一行政字段非空即视为有效填充。
+ * 注意:主库只有 街道/镇(level1)+ 居委(level2),没有省市区,
+ * 旧实现只认省市区会永远不触发填充。 */
+function hasAnyAdmin(fields: AdminFields): boolean {
+  return (
+    [fields.province, fields.city, fields.district, fields.street, fields.town, fields.neighborhood]
+      .some((v): v is string => v != null && v !== "")
+  );
 }
 
 /** 实体匹配结果最小结构 */
@@ -379,14 +409,14 @@ class StandardizeService {
           const subareaMatch = await matchSubarea(fields.subarea, communityMatch.id);
           if (subareaMatch) {
             const [, subFields] = await getRegionAncestors(subareaMatch.regionId);
-            if (subFields.province || subFields.city || subFields.district) {
+            if (hasAnyAdmin(subFields)) {
               Object.assign(fields, subFields);
             }
           }
         }
         // 行政路径填充(以小区为准,覆盖子区域结果)
         const [, fields2] = await getRegionAncestors(communityMatch.regionId);
-        if (fields2.province || fields2.city || fields2.district) {
+        if (hasAnyAdmin(fields2)) {
           Object.assign(fields, fields2);
         }
       }
@@ -397,7 +427,7 @@ class StandardizeService {
       const matchPoi = await matchEntity("poi", fields.poi, adminFields);
       if (matchPoi) {
         const [, poiFields] = await getRegionAncestors(matchPoi.regionId);
-        if (poiFields.province || poiFields.city || poiFields.district) {
+        if (hasAnyAdmin(poiFields)) {
           Object.assign(fields, poiFields);
         }
       }
@@ -408,7 +438,7 @@ class StandardizeService {
       const matchVillage = await matchEntity("village", fields.village, adminFields);
       if (matchVillage) {
         const [, villageFields] = await getRegionAncestors(matchVillage.regionId);
-        if (villageFields.province || villageFields.city || villageFields.district) {
+        if (hasAnyAdmin(villageFields)) {
           Object.assign(fields, villageFields);
         }
       }
