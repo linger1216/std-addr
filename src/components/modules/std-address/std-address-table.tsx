@@ -255,8 +255,13 @@ export const StdAddressTable = memo(function StdAddressTable({
           </motion.div>
         )}
       </AnimatePresence>
-      {/* 全字段表格较宽:容器纵横向都可滚动(overflow-auto) */}
-      <Table containerClassName="h-full overflow-auto">
+      {/* 全字段表格较宽:容器纵横向都可滚动(overflow-auto)。
+          表格用 min-w-full w-max:宽度由各列指定宽度决定,列宽拖拽(自绘 handle
+          写 width)才真正生效 —— w-full(auto 布局)下超宽时浏览器会压缩指定列宽。 */}
+      <Table
+        containerClassName="h-full overflow-auto"
+        className="min-w-full w-max"
+      >
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
