@@ -157,6 +157,7 @@ export function SubareaPage() {
     rowSelection: state.rowSelection,
     onSortingChange: actions.setSorting,
     onRowSelectionChange: actions.setRowSelection,
+    storageKey: "subarea",
   });
 
   const regionOptions: RegionOption[] = useMemo(

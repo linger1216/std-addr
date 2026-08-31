@@ -157,6 +157,7 @@ export function CommunityPage() {
     rowSelection: state.rowSelection,
     onSortingChange: actions.setSorting,
     onRowSelectionChange: actions.setRowSelection,
+    storageKey: "community",
   });
 
   const regionOptions: RegionOption[] = useMemo(

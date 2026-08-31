@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef } from "react";
+import { TableResizeHandle } from "@/components/ui/table-resize-handle";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { flexRender } from "@tanstack/react-table";
@@ -286,8 +287,15 @@ function HeaderCell({ header }: { header: any }) {
   const meta = header.column.columnDef.meta;
   const canSort = header.column.getCanSort();
   const sorted = header.column.getIsSorted();
+  // 用户拖拽调整过(TanStack columnSizing)的列才应用固定宽度,未调整保持原有布局
+  const sizedWidth =
+    header.getContext().table.getState().columnSizing?.[header.column.id];
   return (
-    <TableHead key={header.id} className={cn("text-center", meta?.className)}>
+    <TableHead
+      key={header.id}
+      className={cn("relative text-center", meta?.className)}
+      style={sizedWidth ? { width: sizedWidth } : undefined}
+    >
       {header.isPlaceholder ? null : (
         <div
           className={
@@ -304,6 +312,7 @@ function HeaderCell({ header }: { header: any }) {
           {canSort && <SortIcon sorted={sorted} />}
         </div>
       )}
+      <TableResizeHandle column={header.column} />
     </TableHead>
   );
 }
@@ -318,8 +327,14 @@ function DataRow({ row, index }: { row: any; index: number }) {
     >
       {row.getVisibleCells().map((cell: any) => {
         const meta = cell.column.columnDef.meta;
+        const sizedWidth =
+          cell.getContext().table.getState().columnSizing?.[cell.column.id];
         return (
-          <TableCell key={cell.id} className={cn("text-center", meta?.className)}>
+          <TableCell
+            key={cell.id}
+            className={cn("text-center", meta?.className)}
+            style={sizedWidth ? { width: sizedWidth } : undefined}
+          >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </TableCell>
         );

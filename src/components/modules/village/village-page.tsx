@@ -154,6 +154,7 @@ export function VillagePage() {
     rowSelection: state.rowSelection,
     onSortingChange: actions.setSorting,
     onRowSelectionChange: actions.setRowSelection,
+    storageKey: "village",
   });
 
   const regionOptions: RegionOption[] = useMemo(

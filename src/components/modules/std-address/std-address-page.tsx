@@ -195,6 +195,7 @@ export function StdAddressPage() {
     rowSelection: state.rowSelection,
     onSortingChange: actions.setSorting,
     onRowSelectionChange: actions.setRowSelection,
+    storageKey: "std-address",
   });
 
   // —— 7. 编辑/详情 —— 双 useQuery(id 是 detailId / editingId)——

@@ -156,6 +156,7 @@ export function PoiPage() {
     rowSelection: state.rowSelection,
     onSortingChange: actions.setSorting,
     onRowSelectionChange: actions.setRowSelection,
+    storageKey: "poi",
   });
 
   const regionOptions: RegionOption[] = useMemo(
