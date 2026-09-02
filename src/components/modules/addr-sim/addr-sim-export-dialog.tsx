@@ -17,6 +17,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toLabelStudioExported, type CandidatePool } from "@/lib/addr-sim/generator";
+import type { AddrSimLabel } from "@/lib/validators/addr-sim";
 import type { AddrSimRuleRow } from "./addr-sim-rule-editor";
 import { useBuildItems } from "./hooks/use-build-items";
 import { useAddrSimGenerateState } from "./stores/addr-sim-store";
@@ -48,17 +49,19 @@ export function AddrSimExportDialog({
   rules,
   selectedIds,
   candidates,
+  labels,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   rules: AddrSimRuleRow[];
   selectedIds: string[];
   candidates: CandidatePool;
+  labels: AddrSimLabel[];
 }) {
   const { totalCount, ratios } = useAddrSimGenerateState();
   const [fromName, setFromName] = useState("standard");
   const [toName, setToName] = useState("address");
-  const [shuffle, setShuffle] = useState(false);
+  const [shuffle, setShuffle] = useState(true);
   const [exporting, setExporting] = useState(false);
 
   // 打开时重置为默认值(每次导出独立)
@@ -66,7 +69,7 @@ export function AddrSimExportDialog({
     if (open) {
       setFromName("standard");
       setToName("address");
-      setShuffle(false);
+      setShuffle(true);
       setExporting(false);
     }
   }, [open]);
@@ -77,6 +80,7 @@ export function AddrSimExportDialog({
     candidates,
     totalCount,
     ratios,
+    labels,
   });
 
   // 固定预览前 10 条(与导出同源:same 换算 + 乱序开关影响顺序)

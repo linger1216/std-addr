@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import type { CandidatePool, LabelStudioItem } from "@/lib/addr-sim/generator";
+import type { AddrSimLabel } from "@/lib/validators/addr-sim";
 import type { AddrSimRuleRow } from "./addr-sim-rule-editor";
 import { useBuildItems } from "./hooks/use-build-items";
 import { sliderNumber } from "@/components/ui/rate-slider";
@@ -33,10 +34,12 @@ export function AddrSimGenerateCard({
   rules,
   selectedIds,
   candidates,
+  labels,
 }: {
   rules: AddrSimRuleRow[];
   selectedIds: string[];
   candidates: CandidatePool;
+  labels: AddrSimLabel[];
 }) {
   const { totalCount, ratios, setTotalCount, setRatio, autoBalance, setGenerated } =
     useAddrSimGenerateState();
@@ -50,6 +53,7 @@ export function AddrSimGenerateCard({
     candidates,
     totalCount,
     ratios,
+    labels,
   });
 
   function handlePreview() {
@@ -209,6 +213,7 @@ export function AddrSimGenerateCard({
         rules={rules}
         selectedIds={selectedIds}
         candidates={candidates}
+        labels={labels}
       />
 </div>
   );

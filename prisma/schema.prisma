@@ -232,6 +232,14 @@ model Label {
     name      String   @unique
     label     String?
     status    Int      @default(1)
+    // P0-6:地址要素的默认配置(集中存储,addr-sim 用)
+    // data    = { randomValue?, customValue?, randomNumber?, randomChinese?, prefix?, suffix? }
+    //           4 个数据源 + 默认前后缀(prefix/suffix 各为 { texts, skipRate })统一存这一个 JSON
+    // prefix / suffix 列为旧数据兼容,新写入只写 data 列
+    // 规则步骤不写这些字段时,生成时引用这里的默认值;写了则覆盖。
+    data      Json?
+    prefix    Json?
+    suffix    Json?
     createdAt DateTime @default(now()) @map("created_at")
     updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -250,8 +258,12 @@ model AddressMockRule {
     name      String   @map("name")
     // 步骤数组 JSON(空规则用 null)
     rule      Json?    @map("rule")
-    // 占比 1~100(可空 = 未设置,生成时兜底均分)
+    // 实际占比(0~100,可空)—— 导入后按样本次数自动计算
     radio     Int?     @map("radio")
+    // 规则样本数(导入时写入该规则的样本次数)
+    count     Int?
+    // 总样本数(该规则所属导入文件的总记录数,记录/展示用)
+    total     Int?
     status    Int      @default(1)
     createdAt DateTime @map("created_at")
     updatedAt DateTime @updatedAt @map("updated_at")

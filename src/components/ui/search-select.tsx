@@ -31,6 +31,7 @@ export function SearchSelect<T extends string = string>({
   listClassName,
   align = "start",
   maxHeight = 288,
+  disabled = false,
 }: {
   value: T | undefined;
   onValueChange: (v: T) => void;
@@ -42,6 +43,7 @@ export function SearchSelect<T extends string = string>({
   listClassName?: string;
   align?: "start" | "end";
   maxHeight?: number;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -150,12 +152,23 @@ export function SearchSelect<T extends string = string>({
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => (open ? closeList() : openList())}
+        onClick={() => {
+          if (disabled) return;
+          if (open) {
+            closeList();
+          } else {
+            openList();
+          }
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-disabled={disabled}
+        disabled={disabled}
         className={cn(
           "relative z-60 flex h-8 items-center justify-between gap-2 rounded-xl border border-input bg-card px-3 text-[13px] whitespace-nowrap transition-colors outline-none",
-          "hover:border-foreground/50 hover:text-foreground",
+          disabled
+            ? "cursor-not-allowed opacity-50"
+            : "hover:border-foreground/50 hover:text-foreground",
           triggerClassName,
         )}
       >

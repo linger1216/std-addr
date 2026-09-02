@@ -23,6 +23,7 @@ import {
   computeRadios,
   type ExtractedRule,
 } from "@/lib/addr-sim/extract-rules";
+import type { AddrSimLabel } from "@/lib/validators/addr-sim";
 
 /**
  * 从 Label Studio 标注文件提取规则 Dialog。
@@ -46,7 +47,7 @@ export function AddrSimImportDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  labels: Array<{ name: string; label: string }>;
+  labels: AddrSimLabel[];
   existingRuleNames: string[];
   /** 逐条导入(父级实现 ruleCreate,返回 Promise);失败时抛错 */
   onImportOne: (rule: {
@@ -55,6 +56,8 @@ export function AddrSimImportDialog({
     radio: number;
     /** 样本次数(供导入后占比重分配做权重) */
     count?: number;
+    /** 总样本数(所属导入文件总记录数) */
+    total?: number;
   }) => Promise<{ id: string }>;
   /** 全部导入完成回调(父级刷新列表 + 汇总提示 + 关闭) */
   onImportComplete: (result: {
@@ -126,8 +129,12 @@ export function AddrSimImportDialog({
     try {
       const text = await file.text();
       const raw: unknown = JSON.parse(text);
-      const extracted = extractRules(raw, { labels });
-      const summary = summarizeExtraction(raw, { labels }, extracted);
+      const labelLookup: Array<{ name: string; label: string }> = labels.map((l) => ({
+        name: l.name,
+        label: l.label ?? l.name,
+      }));
+      const extracted = extractRules(raw, { labels: labelLookup });
+      const summary = summarizeExtraction(raw, { labels: labelLookup }, extracted);
       setRules(extracted);
       setUnknownLabels(summary.unknownLabels);
       setTotalRecords(summary.totalRecords);
@@ -186,6 +193,8 @@ export function AddrSimImportDialog({
       radio: radios[i] ?? 1,
       // 样本次数:导入完成后按「现有规则占比 + 新规则样本次数」重新分配占比
       count: r.count,
+      // 总样本数:该文件的总记录数(规则持久化用)
+      total: totalRecords,
     }));
 
     setImporting(true);
@@ -224,7 +233,7 @@ export function AddrSimImportDialog({
         if (!v) onOpenChange(false);
       }}
     >
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-xl min-w-0 overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>从数据提取规则</DialogTitle>
           <DialogDescription>
@@ -232,8 +241,8 @@ export function AddrSimImportDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* 上传区 */}
-        <div className="flex items-center gap-2">
+        {/* 上传区(min-w-0:文件名超长时不撑宽 dialog) */}
+        <div className="flex min-w-0 items-center gap-2">
           <input
             ref={inputRef}
             type="file"
@@ -251,19 +260,21 @@ export function AddrSimImportDialog({
             选择文件
           </Button>
           {fileName && (
-            <span className="truncate text-[12.5px] text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
               {fileName}
             </span>
           )}
           {parsing && <Spinner size="sm" />}
           {parseError && (
-            <span className="truncate text-[12px] text-danger">{parseError}</span>
+            <span className="min-w-0 flex-1 truncate text-[12px] text-danger">
+              {parseError}
+            </span>
           )}
         </div>
 
         {/* 解析摘要(>=1 条记录时显示) */}
         {(rules.length > 0 || totalRecords > 0) && (
-          <div className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
+          <div className="min-w-0 rounded-xl border border-border bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
             共 <span className="font-medium tabular-nums">{totalRecords}</span>{" "}
             条样本,去重后 <span className="font-medium tabular-nums">{rules.length}</span>{" "}
             条规则
@@ -288,10 +299,10 @@ export function AddrSimImportDialog({
                 </span>
               </>
             )}
-            {/* 占比重分配说明:导入完成后现有规则 + 新规则合并按权重归一 */}
+            {/* 占比重分配说明:导入完成后按各规则样本次数自动计算占比 */}
             {rules.length > 0 && (
               <p className="mt-1.5 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground/80">
-                导入完成后,将按「现有规则占比 + 新规则样本次数」重新分配全部规则占比,合计恒为 100%
+                导入完成后,将按样本次数自动计算全部规则占比(count / Σcount),合计恒为 100%
               </p>
             )}
           </div>
@@ -352,9 +363,9 @@ export function AddrSimImportDialog({
           </div>
         )}
 
-        {/* 候选规则列表 */}
+        {/* 候选规则列表(min-w-0:DialogContent 是 grid,grid item 需允许收缩,避免长规则名撑破对话框) */}
         {rules.length > 0 ? (
-          <div className="max-h-80 overflow-y-auto rounded-xl border border-border">
+          <div className="max-h-80 min-w-0 overflow-y-auto overflow-x-hidden rounded-xl border border-border">
             <div className="flex flex-col divide-y divide-border">
               {rules.map((r) => {
                 const exists = existingSet.has(r.name);
@@ -375,8 +386,12 @@ export function AddrSimImportDialog({
                       disabled={importing}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="truncate text-[13px] font-medium">
+                      {/* min-w-0 让超长规则名(如 城市-区县-路-弄-楼栋-…)省略号截断,不撑宽列表 */}
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span
+                          className="min-w-0 truncate text-[13px] font-medium"
+                          title={r.name || "(未命名)"}
+                        >
                           {r.name || "(未命名)"}
                         </span>
                         <Badge variant="secondary" className="text-[10.5px]">
@@ -401,14 +416,14 @@ export function AddrSimImportDialog({
                           </Badge>
                         )}
                       </div>
-                      <div className="mt-1.5 flex flex-wrap gap-1">
+                      <div className="mt-1.5 flex min-w-0 flex-wrap gap-1">
                         {r.steps.map((s, i) => (
                           <Badge
                             key={i}
                             variant="outline"
-                            className="font-mono text-[10.5px]"
+                            className="text-[10.5px]"
                           >
-                            {s.name}
+                            {labels.find((l) => l.name === s.name)?.label ?? s.name}
                           </Badge>
                         ))}
                       </div>
@@ -429,7 +444,7 @@ export function AddrSimImportDialog({
 
         {/* 导入进度(导入中显示) */}
         {importing && progress && (
-          <div className="rounded-xl border border-border bg-muted/30 px-3 py-2.5">
+          <div className="min-w-0 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
             <div className="flex items-center justify-between text-[12px]">
               <span className="font-medium text-foreground">
                 正在导入 {progress.done} / {progress.total}

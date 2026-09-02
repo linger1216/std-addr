@@ -25,12 +25,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   addrSimRuleSchema,
+  type AddrSimLabel,
   type AddrSimStep,
 } from "@/lib/validators/addr-sim";
 import {
   generateAddress,
   type CandidatePool,
 } from "@/lib/addr-sim/generator";
+import { resolveStepWithLabel } from "@/lib/addr-sim/resolve-step";
 import { useAddrSimActions, useAddrSimRuleState } from "./stores/addr-sim-store";
 import { StepEmptyHint, StepRow } from "./addr-sim-step-row";
 
@@ -38,8 +40,12 @@ export interface AddrSimRuleRow {
   id: string;
   name: string;
   steps: AddrSimStep[];
-  /** 占比 1~100(可空 = 未设置) */
+  /** 实际占比 1~100(可空 = 未设置) */
   radio?: number | null;
+  /** 规则样本数(导入时写入;手动创建 = null) */
+  count?: number | null;
+  /** 总样本数(所属导入文件总记录数) */
+  total?: number | null;
   /** 状态:1 启用 / 0 禁用 */
   status?: 0 | 1;
   updatedAt?: string | null;
@@ -50,24 +56,26 @@ export interface AddrSimRuleRow {
  *  - 名称输入 + 保存/取消(保存走父级 mutation)
  *  - 步骤列表:DndContext 拖拽排序 + 添加/删除 + 单步预览
  *  - 底部整条规则预览(按顺序拼接 + 字段名[值]标注)
+ *
+ * P0-6:labels 接收 AddrSimLabel[] 含 data/prefix/suffix;预览前先 resolve。
  */
 export function AddrSimRuleEditor({
   labels,
   candidates,
   isPending,
   onSave,
-  onUpdateAll,
+  onSaveToElement,
 }: {
-  labels: Array<{ name: string; label: string }>;
+  labels: AddrSimLabel[];
   candidates: CandidatePool;
   isPending: boolean;
   /** 保存回调:传入名称 + 步骤数组,由父级决定 create/update */
   onSave: (payload: { name: string; steps: AddrSimStep[] }) => void;
   /**
-   * "更新全局"回调:把当前步骤配置同步到所有规则里同名 label 的步骤上。
-   * 父级决定是立即批量 update 还是仅提示。
+   * "保存到要素"回调:把当前步骤的生效配置写回地址要素默认,
+   * 使所有引用该要素的步骤都继承这份默认。
    */
-  onUpdateAll?: (step: AddrSimStep) => void;
+  onSaveToElement?: (step: AddrSimStep) => void;
 }) {
   const { editingId, editingName, editingRadio, editingStatus, draftSteps } =
     useAddrSimRuleState();
@@ -79,6 +87,11 @@ export function AddrSimRuleEditor({
   );
 
   const stepIds = useMemo(() => draftSteps.map((d) => d.id), [draftSteps]);
+  const labelMap = useMemo(() => {
+    const m = new Map<string, AddrSimLabel>();
+    for (const l of labels) m.set(l.name, l);
+    return m;
+  }, [labels]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -118,17 +131,21 @@ export function AddrSimRuleEditor({
     if (draftSteps.length === 0) return [];
     const rows: Array<{ address: string; parts: Array<{ label: string; value: string }> }> = [];
     for (let i = 0; i < 3; i++) {
-      const { address, result } = generateAddress(
-        draftSteps.map((d) => d.step),
-        { rng: Math.random, candidates },
+      const resolvedSteps = draftSteps.map((d) =>
+        resolveStepWithLabel(d.step, labelMap.get(d.step.name) ?? null),
       );
+      const { address, result } = generateAddress(resolvedSteps, {
+        rng: Math.random,
+        candidates,
+        realNames: Object.values(candidates).flat(),
+      });
       rows.push({
         address,
         parts: result.map((r) => ({ label: r.value.labels[0]!, value: r.value.text })),
       });
     }
     return rows;
-  }, [draftSteps, candidates]);
+  }, [draftSteps, candidates, labelMap]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -229,7 +246,7 @@ export function AddrSimRuleEditor({
                   candidates={candidates}
                   onChange={(step) => updateStepById(d.id, step)}
                   onRemove={() => actions.removeStep(d.id)}
-                  onUpdateAll={onUpdateAll}
+                  onSaveToElement={onSaveToElement}
                 />
               ))}
             </div>

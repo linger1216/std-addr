@@ -19,14 +19,16 @@ export function RateSlider({
   onChange,
   label,
   className,
+  disabled = false,
 }: {
   value: number;
-  onChange: (v: number) => void;
+  onChange?: (v: number) => void;
   label: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex items-center gap-2", disabled && "opacity-60", className)}>
       <span className="shrink-0 text-[11.5px] text-muted-foreground">{label}</span>
       <div className="w-28">
         <Slider
@@ -34,7 +36,11 @@ export function RateSlider({
           min={0}
           max={100}
           step={5}
-          onValueChange={(v) => onChange(sliderNumber(v))}
+          disabled={disabled}
+          onValueChange={(v) => {
+            if (disabled) return;
+            onChange?.(sliderNumber(v));
+          }}
         />
       </div>
       <span className="w-9 shrink-0 text-right text-[11.5px] tabular-nums text-muted-foreground">

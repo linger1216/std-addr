@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { type useAppTable, createAppColumnHelper } from "@/lib/table";
 import { orEmpty } from "@/lib/constants";
 import { formatShortDate } from "@/lib/format";
+import { summarizeLabelDataSources, summarizeNoiseRate, summarizeSkipRate } from "./label-data-summary";
 import type { RouterOutputs } from "@/trpc/react";
 
 /** 表格行 = list procedure 的 item 类型(单一事实来源) */
@@ -76,6 +77,28 @@ export function createLabelColumns() {
       cell: (info) => (
         <span className="text-muted-foreground">{orEmpty(info.getValue())}</span>
       ),
+    }),
+    columnHelper.accessor("data", {
+      header: () => <div className="text-center">数据源</div>,
+      cell: (info) => {
+        const data = info.getValue() as
+          | { skipRate?: number; noiseRate?: number }
+          | null
+          | undefined;
+        const skip = summarizeSkipRate(data?.skipRate);
+        const noise = summarizeNoiseRate(data?.noiseRate);
+        return (
+          <span className="block text-center text-[11.5px] leading-snug text-muted-foreground">
+            {summarizeLabelDataSources(info.getValue())}
+            {(skip || noise) && (
+              <span className="mt-0.5 block text-primary/70">
+                {[skip, noise].filter(Boolean).join(" ")}
+              </span>
+            )}
+          </span>
+        );
+      },
+      meta: { className: "min-w-52" },
     }),
     columnHelper.accessor("status", {
       header: () => <div className="text-center">状态</div>,

@@ -13,6 +13,8 @@ export interface RuleListRow {
   name: string;
   steps?: unknown;
   radio?: number | null;
+  count?: number | null;
+  total?: number | null;
   status?: number;
   updatedAt?: unknown;
 }
@@ -25,6 +27,8 @@ export function toRuleRow(r: RuleListRow): AddrSimRuleRow {
       Array.isArray(r.steps) ? r.steps : []
     ) as AddrSimStep[],
     radio: r.radio ?? null,
+    count: r.count ?? null,
+    total: r.total ?? null,
     status: r.status === 0 ? 0 : 1,
     updatedAt: toUpdatedAtString(r.updatedAt),
   };

@@ -4,8 +4,6 @@ import {
   extractRules,
   summarizeExtraction,
   computeRadios,
-  extractArabicDigits,
-  isChineseNumeric,
   type ExtractOptions,
 } from "./extract-rules";
 
@@ -68,48 +66,7 @@ function record(
   };
 }
 
-type LSRecordShape = {
-  data: { address: string };
-  annotations: Array<{
-    result: Array<{
-      from_name: string;
-      to_name: string;
-      type: string;
-      value: { start: number; end: number; labels: string[]; text: string };
-    }>;
-  }>;
-};
-
-/** 构造带指定标注值(text)的 LS record:labels 与 texts 一一对应 */
-function recordWithText(
-  entries: Array<{ labels: string[]; text: string }>,
-): LSRecordShape {
-  let offset = 0;
-  return {
-    data: { address: "x" },
-    annotations: [
-      {
-        result: entries.map((e) => {
-          const start = offset;
-          offset += e.text.length;
-          return {
-            from_name: "label",
-            to_name: "address",
-            type: "labels",
-            value: {
-              start,
-              end: offset,
-              labels: e.labels,
-              text: e.text,
-            },
-          };
-        }),
-      },
-    ],
-  };
-}
-
-describe("extractRules 从 Label Studio 文件提取规则", () => {
+describe("extractRules 从 Label Studio 文件提取规则(只存步骤骨架 [{name}])", () => {
   it("空数组 → []", () => {
     expect(extractRules([], opts)).toEqual([]);
   });
@@ -119,13 +76,37 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     expect(extractRules({ foo: 1 }, opts)).toEqual([]);
   });
 
-  it("单条 record 单 result → 1 条规则", () => {
+  it("单条 record 单 result → 1 条规则,步骤只含英文 name", () => {
     const rules = extractRules([record([["城市", "路", "小区"]])], opts);
     expect(rules).toHaveLength(1);
     expect(rules[0]?.name).toBe("城市-路-小区");
     expect(rules[0]?.count).toBe(1);
-    expect(rules[0]?.steps.map((s) => s.name)).toEqual(["城市", "路", "小区"]);
+    expect(rules[0]?.steps).toEqual([
+      { name: "city" },
+      { name: "road" },
+      { name: "community" },
+    ]);
     expect(rules[0]?.unknownLabels).toEqual([]);
+  });
+
+  it("英文 label(地址模拟导出)也能识别,不视为未知", () => {
+    const rules = extractRules([record([["city", "road", "district"]])], opts);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.name).toBe("城市-路-区县"); // 规则名用中文序列(label 表 label 列)
+    expect(rules[0]?.steps).toEqual([
+      { name: "city" },
+      { name: "road" },
+      { name: "district" },
+    ]);
+    expect(rules[0]?.unknownLabels).toEqual([]);
+  });
+
+  it("同一序列混用中文与英文 label → 合并为同一规则", () => {
+    const json = [record([["城市", "road"]]), record([["city", "路"]])];
+    const rules = extractRules(json, opts);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.count).toBe(2);
+    expect(rules[0]?.steps).toEqual([{ name: "city" }, { name: "road" }]);
   });
 
   it("多条 record 相同序列 → 1 条规则 count=N", () => {
@@ -139,7 +120,7 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     expect(rules[0]?.count).toBe(3);
   });
 
-  it("多条 record 不同序列 → 多条规则", () => {
+  it("多条 record 不同序列 → 多条规则(规则名用中文序列)", () => {
     const json = [
       record([["城市", "路"]]),
       record([["村", "路"]]),
@@ -154,36 +135,10 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     ]);
   });
 
-  it("label.name 命中实体表 → randomValue.name 用对应实体表", () => {
-    const rules = extractRules([record([["路", "小区", "村", "兴趣点"]])], opts);
-    expect(rules[0]?.steps.map((s) => s.randomValue?.name)).toEqual([
-      "road",
-      "community",
-      "village",
-      "poi",
-    ]);
-  });
-
-  it("label.name 不命中实体表且值非数字 → 自定义列表收集值", () => {
-    const rules = extractRules(
-      [recordWithText([
-        { labels: ["城市"], text: "上海市" },
-        { labels: ["楼层"], text: "顶楼" },
-        { labels: ["室号"], text: "未知门牌" },
-      ])],
-      opts,
-    );
-    expect(rules[0]?.steps.map((s) => s.customValue?.list)).toEqual([
-      ["上海市"],
-      ["顶楼"],
-      ["未知门牌"],
-    ]);
-  });
-
   it("label.label 不在 label 表 → 该 label 被跳过(不影响其它 label)", () => {
     const rules = extractRules([record([["未知", "城市", "路", "未知2"]])], opts);
     expect(rules[0]?.name).toBe("城市-路");
-    expect(rules[0]?.steps).toHaveLength(2);
+    expect(rules[0]?.steps).toEqual([{ name: "city" }, { name: "road" }]);
     // 未知 label 应被收集到此规则的 unknownLabels
     expect(rules[0]?.unknownLabels).toEqual(["未知", "未知2"]);
   });
@@ -207,6 +162,7 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     );
     expect(rules).toHaveLength(1);
     expect(rules[0]?.name).toBe("城市");
+    expect(rules[0]?.steps).toEqual([{ name: "city" }]);
     expect(rules[0]?.unknownLabels).toEqual([]);
   });
 
@@ -216,19 +172,10 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     expect(rules).toHaveLength(2);
   });
 
-  it("步骤结构只保留 name + 来源 + skipRate(无 prefix/suffix)", () => {
+  it("步骤只存 name,不写入任何数据源/前后缀/跳过率(配置从要素拿)", () => {
     const rules = extractRules([record([["城市", "路"]])], opts);
-    // record() 默认 text 为 "xxx"(非数字)→ 城市走自定义,路命中实体表
-    expect(rules[0]?.steps[0]).toEqual({
-      name: "城市",
-      customValue: { list: ["xxx"] },
-      skipRate: 0,
-    });
-    expect(rules[0]?.steps[1]).toEqual({
-      name: "路",
-      randomValue: { name: "road" },
-      skipRate: 0,
-    });
+    expect(rules[0]?.steps[0]).toEqual({ name: "city" });
+    expect(rules[0]?.steps[1]).toEqual({ name: "road" });
     expect(rules[0]?.unknownLabels).toEqual([]);
   });
 
@@ -244,8 +191,7 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     expect(rules[1]?.count).toBe(1);
   });
 
-  it("同名/同序列在 steps 完全一致时才合并(忽略后续 record 的 text)", () => {
-    // 两条 record text 不同但 labels 序列相同 → 同一规则
+  it("同序列(即使 text 不同)→ 合并为同一规则", () => {
     const json = [
       record([["城市", "路"]], "上海市新市路"),
       record([["城市", "路"]], "北京市长安路"),
@@ -253,6 +199,12 @@ describe("extractRules 从 Label Studio 文件提取规则", () => {
     const rules = extractRules(json, opts);
     expect(rules).toHaveLength(1);
     expect(rules[0]?.count).toBe(2);
+  });
+
+  it("数组嵌套多值(一条 result 多个 labels)→ 按顺序收集", () => {
+    const json = [record([["城市"], ["路"]])];
+    const rules = extractRules(json, opts);
+    expect(rules[0]?.steps.map((s) => s.name)).toEqual(["city", "road"]);
   });
 });
 
@@ -330,99 +282,10 @@ describe("unknownLabels 字段", () => {
     expect(rules).toHaveLength(2);
     const rule1 = rules.find((r) => r.name === "城市-路")!;
     const rule2 = rules.find((r) => r.name === "村-路号")!;
-    // 回归:旧实现每个 group 都带 unknownAll(全局),规则1 会错误包含规则2 的未知B
     expect(rule1.unknownLabels).toEqual(["未知A"]);
     expect(rule2.unknownLabels).toEqual(["未知B"]);
     // 规则2 的第三条样本无未知 → 合并后不引入额外未知
     expect(rule2.count).toBe(2);
-  });
-});
-describe("精细化数据来源推导", () => {
-  it("实体表优先:值即使全数字也走实体表", () => {
-    const rules = extractRules(
-      [recordWithText([
-        { labels: ["路"], text: "1500" },
-        { labels: ["村"], text: "120号" },
-      ])],
-      opts,
-    );
-    expect(rules[0]?.steps[0]!.randomValue?.name).toBe("road");
-    expect(rules[0]?.steps[1]!.randomValue?.name).toBe("village");
-  });
-
-  it("全部阿拉伯数字值 → randomNumber arabic(位数取最短/最长)", () => {
-    const json = [
-      recordWithText([{ labels: ["路号"], text: "5号" }]),
-      recordWithText([{ labels: ["路号"], text: "1500号" }]),
-    ];
-    const rules = extractRules(json, opts);
-    expect(rules[0]?.steps[0]!.randomNumber).toEqual({
-      format: "arabic",
-      minDigits: 1,
-      maxDigits: 4,
-    });
-  });
-
-  it("全部中文数字值 → randomNumber chinese", () => {
-    const rules = extractRules(
-      [recordWithText([{ labels: ["路号"], text: "一百五十号" }])],
-      opts,
-    );
-    expect(rules[0]?.steps[0]!.randomNumber?.format).toBe("chinese");
-  });
-
-  it("阿拉伯与中文数字混合 → 自定义列表(保留原始值)", () => {
-    const json = [
-      recordWithText([{ labels: ["路号"], text: "1500号" }]),
-      recordWithText([{ labels: ["路号"], text: "十五号" }]),
-    ];
-    const rules = extractRules(json, opts);
-    expect(rules[0]?.steps[0]!.customValue?.list).toEqual(["1500号", "十五号"]);
-  });
-
-  it("数组嵌套多值(一条 result 多个 labels)→ 按顺序收集", () => {
-    const json = [record([["城市"], ["路"]])];
-    const rules = extractRules(json, opts);
-    expect(rules[0]?.steps.map((s) => s.name)).toEqual(["城市", "路"]);
-  });
-
-  it("去重后值很大(>40)→ 仍写入 customValue.list(不再兜底)", () => {
-    // 上限已去除:即使 100 个不同值也全部写入自定义列表
-    const json = Array.from({ length: 100 }, (_, i) =>
-      recordWithText([{ labels: ["城市"], text: `自定义值${i}` }]),
-    );
-    const rules = extractRules(json, opts);
-    expect(rules[0]?.steps[0]!.customValue?.list).toHaveLength(100);
-    expect(rules[0]?.steps[0]!.randomValue).toBeUndefined();
-  });
-
-  it("自定义列表去重:相同值只保留一份", () => {
-    const json = [
-      recordWithText([{ labels: ["城市"], text: "甲" }]),
-      recordWithText([{ labels: ["城市"], text: "甲" }]),
-      recordWithText([{ labels: ["城市"], text: "乙" }]),
-    ];
-    const rules = extractRules(json, opts);
-    expect(rules[0]?.steps[0]!.customValue?.list).toEqual(["甲", "乙"]);
-    expect(rules[0]?.count).toBe(3);
-  });
-});
-
-describe("数字识别工具", () => {
-  it("extractArabicDigits:纯数字与带单位后缀", () => {
-    expect(extractArabicDigits("1500")).toBe("1500");
-    expect(extractArabicDigits("1500号")).toBe("1500");
-    expect(extractArabicDigits("15号楼")).toBe("15");
-    expect(extractArabicDigits("一楼")).toBeNull();
-    expect(extractArabicDigits("abc")).toBeNull();
-  });
-
-  it("isChineseNumeric:中文数字判断", () => {
-    expect(isChineseNumeric("一百五十")).toBe(true);
-    expect(isChineseNumeric("十五号")).toBe(true);
-    expect(isChineseNumeric("二楼")).toBe(true);
-    expect(isChineseNumeric("1500")).toBe(false);
-    expect(isChineseNumeric("abc")).toBe(false);
   });
 });
 
@@ -460,4 +323,3 @@ describe("computeRadios 批量占比(最大余数法,合计恒 100)", () => {
     }
   });
 });
-

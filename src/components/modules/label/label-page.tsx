@@ -124,6 +124,8 @@ export function LabelPage() {
   const { data: listData, isLoading: listLoading } =
     api.label.list.useQuery(listQueryParas);
   const { data: stats } = api.label.stats.useQuery();
+  // P0-6:候选值池(供表单预览 randomValue 源真实取值)
+  const { data: candidates } = api.addrSim.candidates.useQuery();
 
   // 切换筛选 → 回第一页
   useEffect(() => {
@@ -172,12 +174,18 @@ export function LabelPage() {
         name: values.name,
         label: values.label,
         status: values.status,
+        data: values.data,
+        prefix: values.prefix,
+        suffix: values.suffix,
       });
     } else {
       mut.create.mutate({
         name: values.name,
         label: values.label,
         status: values.status,
+        data: values.data,
+        prefix: values.prefix,
+        suffix: values.suffix,
       });
     }
   }
@@ -304,6 +312,7 @@ export function LabelPage() {
         initial={editingFormInitial}
         onSubmit={handleSubmit}
         isPending={mut.create.isPending || mut.update.isPending}
+        candidates={candidates}
       />
 
       <LabelDetailDialog

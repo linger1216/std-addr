@@ -2,7 +2,7 @@
  * 规则操作 hook —— 收集 page.tsx 中分散的 CRUD 编排逻辑:
  *  - 保存(新建/更新,含 radio/status)
  *  - 复制规则
- *  - "更新全局"(把步骤覆盖到所有规则的同名步骤 + 按要素重命名)
+ *  - "保存到要素"(把当前步骤的生效配置写回地址要素默认,所有引用该要素的步骤继承)
  *  - 从数据提取导入(逐条 + 完成回调 + 导入后占比重分配)
  *  - 快速分配占比(选中 N 条 → 按当前排序递减权重分配)
  *
@@ -14,9 +14,14 @@ import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 import { toApiError } from "@/lib/api/error";
-import { allocateByWeights } from "@/lib/addr-sim/radios";
+import { computeReallocatedRadios } from "@/lib/addr-sim/radios";
+import { resolveStepWithLabel } from "@/lib/addr-sim/resolve-step";
 
-import type { AddrSimStep } from "@/lib/validators/addr-sim";
+import {
+  type AddrSimLabel,
+  type AddrSimLabelConfig,
+  type AddrSimStep,
+} from "@/lib/validators/addr-sim";
 import type { AddrSimRuleRow } from "../addr-sim-rule-editor";
 import { useAddrSimStore } from "../stores/addr-sim-store";
 
@@ -43,6 +48,12 @@ export interface UseRuleActionsOptions {
    * 导入后重分配 + 快速分配占比共用,一次调用避免 N 次 update 各自 toast。
    */
   reallocate: BatchRadioMutation;
+  /** 地址要素字典(含 id + 默认配置),供"保存到要素"使用 */
+  labels: AddrSimLabel[];
+  /** 更新地址要素默认配置(label.update);入参 { id, data } */
+  saveLabel: {
+    mutateAsync: (input: { id: string; data: AddrSimLabelConfig | null }) => Promise<unknown>;
+  };
   onImportDialogChange: (v: boolean) => void;
 }
 
@@ -54,10 +65,12 @@ interface ImportedCreate {
   count: number;
   /** 创建时写入的占比(用于判断是否还需更新) */
   radio: number;
+  /** 总样本数(所属导入文件总记录数) */
+  total: number;
 }
 
 export function useRuleActions(opts: UseRuleActionsOptions) {
-  const { rules, editingId, create, update, reallocate, onImportDialogChange } =
+  const { rules, editingId, create, update, reallocate, labels, saveLabel, onImportDialogChange } =
     opts;
 
   /** 本次导入成功创建的规则(每次导入完成清空) */
@@ -80,77 +93,54 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
     [editingId, create, update],
   );
 
-  /** 复制规则:名称加" (副本)",步骤深拷贝,radio 原样 */
+  /** 复制规则:名称加" (副本)",步骤深拷贝,radio/count/total 原样 */
   const handleCopy = useCallback(
     (rule: AddrSimRuleRow) => {
       create.mutate({
         name: `${rule.name} (副本)`,
         steps: JSON.parse(JSON.stringify(rule.steps)) as AddrSimStep[],
         radio: rule.radio ?? null,
+        count: rule.count ?? undefined,
+        total: rule.total ?? undefined,
       });
     },
     [create],
   );
 
   /**
-   * "更新全局":把当前步骤配置覆盖所有规则中同名 label 的步骤,
-   * 并按最新 steps 重新拼接规则名(规则名 = 要素1-要素2-… 约定)。
+   * "保存到要素":把当前步骤的生效配置(数据源/前后缀/整体跳过率,含继承自 label 的部分)
+   * 写回地址要素默认配置,使所有引用该要素的步骤都继承这份默认。
+   * 保留原 label 的干扰率(步骤不单独配置干扰)。
    */
-  const handleUpdateAll = useCallback(
+  const handleSaveToElement = useCallback(
     async (step: AddrSimStep) => {
       const targetName = step.name;
-      const tasks = rules
-        .filter((r) => r.id !== editingId)
-        .filter((r) => r.steps.some((s) => s.name === targetName))
-        .map((r) => {
-          const newSteps = r.steps.map((s) =>
-            s.name === targetName ? { ...step } : s,
-          );
-          const derivedName = newSteps.map((s) => s.name).join("-") || "提取规则";
-          return {
-            id: r.id,
-            name: derivedName,
-            steps: newSteps,
-            nameChanged: derivedName !== r.name,
-          };
-        });
-
-      if (tasks.length === 0) {
-        toast.warning(`未找到其它规则使用 "${targetName}"`);
+      const label = labels.find((l) => l.name === targetName);
+      if (!label) {
+        toast.warning(`未找到地址要素 "${targetName}",请先在「地址要素」页创建`);
         return;
       }
 
-      let updated = 0;
-      let failed = 0;
-      const errors: string[] = [];
-      await Promise.all(
-        tasks.map(async (t) => {
-          try {
-            // 不传 radio(radio 字段独立于步骤,同步时不动)
-            await update.mutateAsync({ id: t.id, name: t.name, steps: t.steps });
-            updated += 1;
-          } catch (err) {
-            failed += 1;
-            errors.push(toApiError(err).message);
-          }
-        }),
-      );
-      if (updated > 0) {
-        const nameChangedCount = tasks.filter((t) => t.nameChanged).length;
-        const msg =
-          nameChangedCount > 0
-            ? `已将 "${targetName}" 同步到 ${updated} 条规则,并按要素重命名 ${nameChangedCount} 条`
-            : `已将 "${targetName}" 同步到 ${updated} 条规则`;
-        toast.success(msg + (failed > 0 ? `,${failed} 条失败` : ""));
-      }
-      if (failed > 0) {
-        const firstError = errors[0];
-        toast.error(
-          `部分规则同步失败${firstError ? `:${firstError}` : ""}`,
+      // 合并 label 默认 → 当前步骤的生效配置(与预览/生成一致)
+      const resolved = resolveStepWithLabel(step, label);
+      const config: AddrSimLabelConfig = {
+        ...resolved.data,
+        ...(resolved.prefix ? { prefix: resolved.prefix } : {}),
+        ...(resolved.suffix ? { suffix: resolved.suffix } : {}),
+        skipRate: resolved.skipRate,
+        noiseRate: resolved.noiseRate,
+      };
+
+      try {
+        await saveLabel.mutateAsync({ id: label.id!, data: config });
+        toast.success(
+          `已保存到地址要素「${label.label ?? targetName}」,所有引用该要素的步骤将使用此默认配置`,
         );
+      } catch (err) {
+        toast.error(toApiError(err).message);
       }
     },
-    [rules, editingId, update],
+    [labels, saveLabel],
   );
 
   /** 从数据提取导入:逐条创建(进度由 Dialog 管理),成功记录到 importedRef 供完成后重分配 */
@@ -159,13 +149,17 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
       name: string;
       steps: AddrSimStep[];
       radio: number;
-      /** 样本次数(ExtractedRule.count,作为重分配权重) */
+      /** 样本次数(ExtractedRule.count,作为重分配权重并持久化) */
       count?: number;
+      /** 总样本数(所属导入文件总记录数) */
+      total?: number;
     }) => {
       const res = (await create.mutateAsync({
         name: rule.name,
         steps: rule.steps,
         radio: rule.radio,
+        count: rule.count,
+        total: rule.total,
       })) as { id?: string } | null | undefined;
       // 只记录创建成功的规则(失败的不参与重分配)
       if (res?.id) {
@@ -174,6 +168,7 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
           name: rule.name,
           count: rule.count ?? 0,
           radio: rule.radio,
+          total: rule.total ?? 0,
         });
       }
       return { id: res?.id ?? "" };
@@ -199,18 +194,12 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
       // —— 占比重分配 ——
       let reallocated = false;
       if (result.success > 0 && created.length > 0) {
-        // 参与者:现有规则(已设置占比,权重 = 当前占比)+ 本次导入成功规则(权重 = 样本次数)
-        const weights: Array<{ id: string; weight: number }> = [];
-        for (const r of rules) {
-          // 导入期间每次 create 都会 invalidate,ruleList 可能已含本次新规则,
-          // 用 createdIds 过滤,避免重复计数
-          if (createdIds.has(r.id)) continue;
-          if (typeof r.radio !== "number") continue; // 未设置占比的规则不参与
-          weights.push({ id: r.id, weight: r.radio });
-        }
-        for (const c of created) weights.push({ id: c.id, weight: c.count });
-
-        const targets = allocateByWeights(weights);
+        // 公平重算:现有规则有 count 用 count(否则 radio 兜底),新导入规则按 count。
+        // 导入期间每次 create 都会 invalidate,ruleList 可能已含本次新规则,用 createdIds 过滤避免重复计数。
+        const targets = computeReallocatedRadios(
+          rules.filter((r) => !createdIds.has(r.id)),
+          created.map((c) => ({ id: c.id, count: c.count })),
+        );
         const updates: Array<{ id: string; radio: number }> = [];
         for (const r of rules) {
           if (createdIds.has(r.id)) continue;
@@ -274,7 +263,7 @@ export function useRuleActions(opts: UseRuleActionsOptions) {
   return {
     handleSave,
     handleCopy,
-    handleUpdateAll,
+    handleSaveToElement,
     handleImportOne,
     handleImportComplete,
     handleQuickAllocate,

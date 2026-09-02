@@ -10,6 +10,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:seed": "tsx scripts/seed.ts",
+    "db:seed-candidates": "tsx scripts/seed-addr-sim-candidates.ts",
     "db:setup": "prisma db push && tsx scripts/seed.ts",
     "db:backfill-region-type": "tsx scripts/backfill-region-type.ts",
     "db:migrate-regions-to-villages": "tsx scripts/migrate-regions-to-villages.ts",

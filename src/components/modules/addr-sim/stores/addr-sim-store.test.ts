@@ -14,6 +14,7 @@ beforeEach(() => {
     editingStatus: 1,
     draftSteps: [],
     nameEdited: false,
+    labelMap: {},
   });
 });
 
@@ -60,5 +61,48 @@ describe("addr-sim-store 选择与占比初始化", () => {
     const { ratios, selectedIds } = useAddrSimStore.getState();
     expect(selectedIds).toEqual(["b"]);
     expect(ratios).toEqual({ b: 60 });
+  });
+});
+
+describe("规则名自动拼接(要素中文名以 - 连接)", () => {
+  it("换要素/增删/改序都重新拼接;手动改名后停止", () => {
+    const st = useAddrSimStore.getState();
+    st.setLabelMap({ city: "城市", road: "路", district: "区县" });
+    st.openCreate();
+
+    const s0 = useAddrSimStore.getState();
+    s0.updateStep(s0.draftSteps[0]!.id, { name: "city" });
+    expect(useAddrSimStore.getState().editingName).toBe("城市");
+
+    const s1 = useAddrSimStore.getState();
+    s1.addStep({ name: "road" });
+    expect(useAddrSimStore.getState().editingName).toBe("城市-路");
+
+    const s2 = useAddrSimStore.getState();
+    s2.addStep({ name: "district" });
+    expect(useAddrSimStore.getState().editingName).toBe("城市-路-区县");
+
+    const s3 = useAddrSimStore.getState();
+    s3.removeStep(s3.draftSteps[1]!.id);
+    expect(useAddrSimStore.getState().editingName).toBe("城市-区县");
+
+    const s4 = useAddrSimStore.getState();
+    s4.moveStep(0, 1);
+    expect(useAddrSimStore.getState().editingName).toBe("区县-城市");
+
+    // 手动改名 → 停止自动拼接
+    useAddrSimStore.getState().setEditingName("自定义名");
+    const s5 = useAddrSimStore.getState();
+    s5.updateStep(s5.draftSteps[0]!.id, { name: "road" });
+    expect(useAddrSimStore.getState().editingName).toBe("自定义名");
+  });
+
+  it("未知要素名 → 用英文 name 兜底拼接", () => {
+    const st = useAddrSimStore.getState();
+    st.setLabelMap({ city: "城市" });
+    st.openCreate();
+    const s = useAddrSimStore.getState();
+    s.updateStep(s.draftSteps[0]!.id, { name: "weird" });
+    expect(useAddrSimStore.getState().editingName).toBe("weird");
   });
 });

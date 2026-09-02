@@ -1,6 +1,11 @@
 /**
  * 地址模拟生成器 —— 纯函数、无副作用、rng 可注入(便于单测)。
  *
+ * P0-6 改动:
+ *  - 输入改为 ResolvedAddrSimStep(已合并 label 默认)
+ *  - 4 个数据源(randomValue/customValue/randomNumber/randomChinese)是 4 个独立集合,配置任意组合时**任取其一**(随机选源取值)
+ *  - 步骤 data 为空 → 视为无效,整步跳过
+ *
  * 输入:有序步骤数组 + 候选值池;输出:地址串 + Label Studio 分片标注。
  *
  * Label Studio 标注格式(result 数组):
@@ -14,10 +19,14 @@
  */
 
 import {
-  type AddrSimStep,
   type AddrSimSourceName,
+  type ResolvedAddrSimStep,
+  DEFAULT_AFFIX_SKIP_RATE,
 } from "@/lib/validators/addr-sim";
 import { numberToChinese } from "./chinese-numeral";
+import { buildHanCharPool, pickChineseFragment } from "./name-corpus";
+import { isResolvedStepValid } from "./resolve-step";
+import { injectNoise } from "./noise";
 
 /** 候选值池:实体表名 → 候选值数组(前端从 DB 实时拉取后传入) */
 export type CandidatePool = Record<AddrSimSourceName, string[]>;
@@ -29,6 +38,11 @@ export type Rng = () => number;
 export interface GenerateContext {
   rng: Rng;
   candidates: CandidatePool;
+  /**
+   * P0-4:DB 真实名称全量(road/community/village/poi 合并去重),用于丰富 randomChinese 字池。
+   * 由调用方(前端 hook)从 candidates 全量并集派生;不传则仅用词典 + 76 字兜底。
+   */
+  realNames?: readonly string[];
 }
 
 /** Label Studio result 单条分片 */
@@ -68,16 +82,35 @@ function randInt(min: number, max: number, rng: Rng): number {
   return min + Math.floor(rng() * (max - min + 1));
 }
 
-/** 随机中文汉字池(常用字,避免生僻字) */
-const HAN_CHARS =
-  "长街新村园苑里坊巷甲乙丙丁东南西北中白青红金秀福安平华兴庆和顺昌明德仁爱信义礼智诚心山水花木竹石云雨风光明春华秋实雅静乐康祥瑞";
+/** P0-4:真实命名常用字池 + DB 候选值片段(见 name-corpus.ts) */
 
-/** 生成随机中文串 */
-function randomChinese(minLength: number, maxLength: number, rng: Rng): string {
-  const len = randInt(minLength, maxLength, rng);
+/**
+ * 生成随机中文串。
+ * 池子由 buildHanCharPool 构建:DB 真实名称切片段 + 常用前缀/通名词典 + 76 字兜底。
+ * 生成时每"次"抽 1 个片段(可能是 1~4 字),直到累计长度到达区间。
+ * 这样首字命中"阳/锦/金/翠..."等真实前缀的概率显著提升,比原 76 字硬池更接近真实命名。
+ */
+function randomChinese(
+  minLength: number,
+  maxLength: number,
+  rng: Rng,
+  realNames?: readonly string[],
+): string {
+  const pool = buildHanCharPool(realNames ?? []);
+  const targetLen = randInt(minLength, maxLength, rng);
   let out = "";
-  for (let i = 0; i < len; i++) {
-    out += HAN_CHARS[Math.floor(rng() * HAN_CHARS.length)]!;
+  // 防止死循环:迭代上限 = targetLen * 4(每段平均 1~2 字,4 倍足够)
+  const maxIter = targetLen * 4 + 8;
+  let iter = 0;
+  while (out.length < targetLen && iter < maxIter) {
+    out += pickChineseFragment(pool, rng);
+    iter++;
+  }
+  // 兜底:还不够长时再用兜底字池补齐
+  if (out.length < targetLen) {
+    while (out.length < targetLen) {
+      out += pickChineseFragment(pool, rng);
+    }
   }
   return out;
 }
@@ -88,8 +121,24 @@ function randomNumber(
   maxDigits: number,
   format: "arabic" | "chinese",
   rng: Rng,
+  /** P0-3:真实位数直方图(可选);有值时按权重采样位数,key=位数(字符串),value=出现次数 */
+  weights?: Record<string, number>,
 ): string {
-  const digits = randInt(minDigits, maxDigits, rng);
+  let digits: number;
+  if (weights && Object.keys(weights).length > 0) {
+    // 按权重采样位数:把直方图展开成 [digits] 数组,随机抽一个
+    const bucket: number[] = [];
+    for (const [k, count] of Object.entries(weights)) {
+      const d = Number(k);
+      if (!Number.isFinite(d) || d < minDigits || d > maxDigits || count <= 0) continue;
+      for (let i = 0; i < count; i++) bucket.push(d);
+    }
+    digits = bucket.length > 0
+      ? bucket[Math.floor(rng() * bucket.length)]!
+      : randInt(minDigits, maxDigits, rng);
+  } else {
+    digits = randInt(minDigits, maxDigits, rng);
+  }
   // 首位不能为 0,保证 digits 位有效数字
   let n = randInt(1, 9, rng);
   for (let i = 1; i < digits; i++) {
@@ -100,55 +149,81 @@ function randomNumber(
 
 /**
  * 生成单个步骤的值;步骤被 skipRate 跳过时返回 null。
- * 数据来源四选一:
- *  - randomValue:实体表候选值(random 取一)
- *  - customValue:用户自定义候选值列表(random 取一)
- *  - randomNumber:随机数字(arabic / chinese)
- *  - randomChinese:随机中文
- * 前后缀各自按 skipRate 决定是否拼接。
+ *
+ * P0-6 语义:
+ *  - 输入是 ResolvedAddrSimStep(已合并 label 默认配置)
+ *  - 4 个数据源 randomValue/customValue/randomNumber/randomChinese 是 4 个独立集合,
+ *    配置任意组合时**任取其一**:从激活源里随机选一个,再从这个源里抽 1 条;
+ *    若该源取不到值(池空)则环形尝试下一个激活源。
+ *  - data 为空 → 整步跳过(返回 null)
+ *
+ * 前后缀各自按 skipRate 决定是否拼接;prefix/suffix 来源已由 resolver 决定(取 step override 或 label 默认)。
  */
 export function generateStepValue(
-  step: AddrSimStep,
+  step: ResolvedAddrSimStep,
   ctx: GenerateContext,
 ): string | null {
   if (hits(step.skipRate, ctx.rng)) return null;
+  if (!isResolvedStepValid(step)) return null;
 
+  // 收集激活源的取值器(每个源独立抽 1;返回 null 表示该源此刻取不到值)
+  const makers: Array<() => string | null> = [];
+
+  if (step.data.randomValue) {
+    makers.push(() => {
+      const pool = ctx.candidates[step.data.randomValue!.name] ?? [];
+      return pool.length > 0 ? pickOne(pool, ctx.rng)! : null;
+    });
+  }
+  if (step.data.customValue && step.data.customValue.list.length > 0) {
+    makers.push(() => pickOne(step.data.customValue!.list, ctx.rng)!);
+  }
+  if (step.data.randomNumber) {
+    const c = step.data.randomNumber;
+    makers.push(() => randomNumber(c.minDigits, c.maxDigits, c.format, ctx.rng, c.weights));
+  }
+  if (step.data.randomChinese) {
+    const d = step.data.randomChinese;
+    makers.push(() => randomChinese(d.minLength, d.maxLength, ctx.rng, ctx.realNames));
+  }
+
+  if (makers.length === 0) return null;
+
+  // 任取其一:随机起点环形遍历,取到第一个非空值。
+  // 单源时无额外 rng 消耗(与旧行为一致);多源才抽起点。
+  const start = makers.length > 1 ? Math.floor(ctx.rng() * makers.length) : 0;
   let value: string | null = null;
+  for (let i = 0; i < makers.length; i++) {
+    const v = makers[(start + i) % makers.length]!();
+    if (v !== null) {
+      value = v;
+      break;
+    }
+  }
+  if (value === null) return null;
 
-  if (step.randomValue) {
-    const fromTable = ctx.candidates[step.randomValue.name] ?? [];
-    value = pickOne(fromTable, ctx.rng);
-    // 候选值池为空 → 该步骤视为跳过
-    if (value === null) return null;
-  } else if (step.customValue) {
-    // 自定义列表为空 → 跳过(生成结果不含该步骤)
-    value = pickOne(step.customValue.list, ctx.rng);
-    if (value === null) return null;
-  } else if (step.randomNumber) {
-    const rn = step.randomNumber;
-    value = randomNumber(rn.minDigits, rn.maxDigits, rn.format, ctx.rng);
-  } else if (step.randomChinese) {
-    const rc = step.randomChinese;
-    value = randomChinese(rc.minLength, rc.maxLength, ctx.rng);
-  } else {
-    return null;
+  // 前后缀(各自独立跳过率,默认 DEFAULT_AFFIX_SKIP_RATE;texts 非空时随机抽一个拼接)
+  if (step.prefix && step.prefix.texts.length > 0 && !hits(step.prefix.skipRate ?? DEFAULT_AFFIX_SKIP_RATE, ctx.rng)) {
+    value = pickOne(step.prefix.texts, ctx.rng)! + value;
+  }
+  if (step.suffix && step.suffix.texts.length > 0 && !hits(step.suffix.skipRate ?? DEFAULT_AFFIX_SKIP_RATE, ctx.rng)) {
+    value = value + pickOne(step.suffix.texts, ctx.rng)!;
   }
 
-  // 前后缀(各自独立跳过率;texts 非空时随机抽一个拼接)
-  if (step.prefix && step.prefix.texts.length > 0 && !hits(step.prefix.skipRate, ctx.rng)) {
-    value = pickOne(step.prefix.texts, ctx.rng) + value;
-  }
-  if (step.suffix && step.suffix.texts.length > 0 && !hits(step.suffix.skipRate, ctx.rng)) {
-    value = value + pickOne(step.suffix.texts, ctx.rng);
+  // 干扰率:按概率注入错别字/丢字/漏字(用于训练干扰项)
+  if (step.noiseRate > 0 && value.length > 0) {
+    value = injectNoise(value, step.noiseRate, ctx.rng);
   }
   return value;
 }
 
 /**
  * 按步骤顺序生成完整地址(空串拼接)+ 分片标注。
+ *
+ * 输入是已 resolve 的步骤(由调用方在调用前 resolveStepWithLabel)。
  */
 export function generateAddress(
-  steps: AddrSimStep[],
+  steps: ResolvedAddrSimStep[],
   ctx: GenerateContext,
 ): GeneratedAddress {
   let address = "";
@@ -186,9 +261,10 @@ export interface LabelStudioItem {
 
 /**
  * 批量生成:每条记录带自增 id(Label Studio 导入通用格式)。
+ * 输入是已 resolve 的步骤。
  */
 export function generateDataset(
-  steps: AddrSimStep[],
+  steps: ResolvedAddrSimStep[],
   count: number,
   ctx: GenerateContext,
 ): LabelStudioItem[] {
@@ -203,9 +279,9 @@ export function generateDataset(
   return items;
 }
 
-/** 按规则 + 数量生成(供生成卡片按比例合成) */
+/** 按规则 + 数量生成(供生成卡片按比例合成);输入已 resolve */
 export function generateForRules(
-  rules: Array<{ name: string; steps: AddrSimStep[] }>,
+  rules: Array<{ name: string; steps: ResolvedAddrSimStep[] }>,
   counts: number[],
   ctx: GenerateContext,
 ): LabelStudioItem[] {
@@ -214,7 +290,6 @@ export function generateForRules(
     const n = counts[i] ?? 0;
     if (n <= 0) return;
     const generated = generateDataset(rule.steps, n, ctx);
-    // 打上规则名,便于前端按规则区分
     items.push(
       ...generated.map((item) => ({
         ...item,
@@ -258,9 +333,10 @@ export function shuffleArray<T>(arr: T[], rng: () => number = Math.random): T[] 
 /**
  * 预览单步:当前配置生成 10 个样本值(不做地址拼接)。
  * 返回 null 表示该步被跳过或候选池为空。
+ * 输入是已 resolve 的步骤。
  */
 export function previewStepValues(
-  step: AddrSimStep,
+  step: ResolvedAddrSimStep,
   count: number,
   ctx: GenerateContext,
 ): Array<string | null> {

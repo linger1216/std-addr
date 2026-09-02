@@ -44,8 +44,10 @@ export function distributeByWeights(
     remainder -= 1;
   }
 
-  // 下限修正:低于 minShare 的槽位补到 minShare,差额从当前最大份额扣减
-  if (minShare > 0) {
+  // 下限修正:低于 minShare 的槽位补到 minShare,差额从当前最大份额扣减。
+  // 预算不足(规则数 × minShare > total,例:460 条规则各保底 1% = 460% > 100%)
+  // 时,放弃下限、按权重精确分配,保证合计恒等于 total(极小权重规则可能分到 0)。
+  if (minShare > 0 && minShare * result.length <= total) {
     for (let i = 0; i < result.length; i++) {
       if (result[i]! < minShare) {
         const deficit = minShare - result[i]!;
@@ -61,7 +63,6 @@ export function distributeByWeights(
           }
         }
         if (maxIdx >= 0) result[maxIdx]! -= deficit;
-        // 无富余槽位(总占比不足以满足 n × minShare)→ 维持现状,由调用方过滤
       }
     }
   }
@@ -102,4 +103,27 @@ export function allocateByWeights(
     out[it.id] = shares[i]!;
   });
   return out;
+}
+
+/**
+ * 导入完成后按样本次数公平重算占比:
+ *  - 现有规则:有 count(>0) 用 count 作权重,否则(手动/旧数据)用 radio 兜底;radio 非 number 的跳过。
+ *  - 新导入规则:权重 = 各自的样本次数 count。
+ * 结果合计恒等于 total(默认 100);极小权重规则保底 1%(minShare 下限)。
+ */
+export function computeReallocatedRadios(
+  existing: Array<{ id: string; radio?: number | null; count?: number | null }>,
+  imported: Array<{ id: string; count: number }>,
+  total = 100,
+): Record<string, number> {
+  const weights: Array<{ id: string; weight: number }> = [];
+  for (const r of existing) {
+    if (typeof r.radio !== "number") continue; // 未设置占比的规则不参与
+    const w = typeof r.count === "number" && r.count > 0 ? r.count : r.radio;
+    weights.push({ id: r.id, weight: w });
+  }
+  for (const c of imported) {
+    weights.push({ id: c.id, weight: Math.max(0, c.count) });
+  }
+  return allocateByWeights(weights, total);
 }

@@ -292,6 +292,12 @@ export function AddrSimRuleList({
                         占比 {r.radio}%
                       </span>
                     )}
+                    {typeof r.count === "number" && (
+                      <span className="ml-1.5 text-[10px] text-muted-foreground">
+                        样本 {r.count}
+                        {typeof r.total === "number" ? `/${r.total}` : ""}
+                      </span>
+                    )}
                     {r.status === 0 && (
                       <span className="ml-1.5 rounded bg-danger-soft px-1 py-px text-[10px] text-danger">
                         已禁用

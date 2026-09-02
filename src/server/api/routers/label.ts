@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Prisma } from "../../../../generated/prisma/client";
+import { Prisma } from "../../../../generated/prisma/client";
 
 import {
   adminProcedure,
@@ -95,6 +95,8 @@ export const labelRouter = createTRPCRouter({
         name: row.name,
         label: row.label,
         status: row.status,
+        // 数据源默认配置(列表展示「数据源」列)
+        data: row.data,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       }));
@@ -133,6 +135,13 @@ export const labelRouter = createTRPCRouter({
           name: input.name,
           label: input.label ?? null,
           status: input.status,
+          // P0-6:默认配置统一存 data 列(4 数据源 + 默认前后缀);null → JsonNull 清空
+          ...(input.data !== undefined
+            ? { data: input.data === null ? Prisma.JsonNull : (input.data as unknown as Prisma.InputJsonValue) }
+            : {}),
+          // prefix/suffix 独立列仅供旧数据读时兼容,新写入不再使用
+          prefix: Prisma.JsonNull,
+          suffix: Prisma.JsonNull,
           createdAt: new Date(),
         },
       }),
@@ -145,6 +154,13 @@ export const labelRouter = createTRPCRouter({
       if (input.name !== undefined) data.name = input.name;
       if (input.label !== undefined) data.label = input.label;
       if (input.status !== undefined) data.status = input.status;
+      // P0-6:统一配置写入 data 列(undefined 不触碰,明确传 null 清空);
+      // 同时清空旧 prefix/suffix 列,避免读时回退到过期值(prefix/suffix 已并入 data)
+      if (input.data !== undefined) {
+        data.data = input.data ?? Prisma.JsonNull;
+        data.prefix = Prisma.JsonNull;
+        data.suffix = Prisma.JsonNull;
+      }
       return ctx.db.label.update({
         where: { id: input.id },
         data,

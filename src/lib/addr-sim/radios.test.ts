@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   allocateByOrder,
   allocateByWeights,
+  computeReallocatedRadios,
   distributeByWeights,
 } from "./radios";
 
@@ -41,6 +42,18 @@ describe("distributeByWeights 最大余数法", () => {
     const result = distributeByWeights(weights, 100, 1);
     expect(result.reduce((a, b) => a + b, 0)).toBe(100);
     expect(result.every((v) => v >= 1)).toBe(true);
+  });
+
+  it("预算不足(n×minShare > total):放弃下限,合计恒 100,极小权重可分到 0", () => {
+    // 460 条规则各保底 1% = 460% > 100 → 不能保证下限,退回纯权重分配
+    const weights = Array.from({ length: 460 }, (_, i) => (i < 5 ? 500 - i * 50 : 1));
+    const result = distributeByWeights(weights, 100, 1);
+    expect(result).toHaveLength(460);
+    expect(result.reduce((a, b) => a + b, 0)).toBe(100);
+    // 少数大权重仍拿到正份额
+    expect(result[0]!).toBeGreaterThan(0);
+    // 大量极小权重(每次只出现 1 次)在此预算下可能分到 0
+    expect(result.slice(5).some((v) => v === 0)).toBe(true);
   });
 });
 
@@ -104,5 +117,63 @@ describe("allocateByWeights 导入后重分配(现有占比 + 样本次数)", ()
 
   it("空参与者 → 空对象", () => {
     expect(allocateByWeights([])).toEqual({});
+  });
+});
+
+describe("computeReallocatedRadios 导入后按样本次数公平重算", () => {
+  it("A=1000 条(count 300/400/300)+ B=10 条(count 3/3/4)→ A 保持 ~30/40/30,B 各≥1%", () => {
+    const targets = computeReallocatedRadios(
+      [
+        { id: "a1", radio: 30, count: 300 },
+        { id: "a2", radio: 40, count: 400 },
+        { id: "a3", radio: 30, count: 300 },
+      ],
+      [
+        { id: "b1", count: 3 },
+        { id: "b2", count: 3 },
+        { id: "b3", count: 4 },
+      ],
+    );
+    // B 的 3 条各保底 1%,A 占 ~97%
+    expect(targets.b1!).toBe(1);
+    expect(targets.b2!).toBe(1);
+    expect(targets.b3!).toBe(1);
+    expect(targets.a2!).toBeGreaterThan(targets.a1!);
+    expect(targets.a1!).toBeGreaterThan(30 - 3); // A 的占比基本保持
+    expect(targets.a2!).toBeGreaterThanOrEqual(36); // minShare 从最大份额(a2)扣减给 B
+    expect(Object.values(targets).reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it("现有规则无 count → 用 radio 兜底", () => {
+    const targets = computeReallocatedRadios(
+      [{ id: "m", radio: 30, count: null }],
+      [{ id: "b", count: 3 }],
+    );
+    // m 权重 30(radio),b 权重 3 → m≈91,b≈9(或 minShare 修正)
+    expect(targets.m!).toBeGreaterThan(50);
+    expect(Object.values(targets).reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it("全部无 count(纯手动/旧数据)→ 按 radio 权重(与旧行为一致)", () => {
+    const targets = computeReallocatedRadios(
+      [
+        { id: "a", radio: 50, count: null },
+        { id: "b", radio: 30, count: null },
+      ],
+      [],
+    );
+    expect(targets).toEqual({ a: 63, b: 37 });
+  });
+
+  it("radio 未设置的规则不参与重算", () => {
+    const targets = computeReallocatedRadios(
+      [
+        { id: "a", radio: 50, count: 500 },
+        { id: "x", radio: null, count: 100 }, // 无占比 → 跳过
+      ],
+      [{ id: "b", count: 500 }],
+    );
+    expect(targets.x).toBeUndefined();
+    expect(Object.values(targets).reduce((a, b) => a + b, 0)).toBe(100);
   });
 });

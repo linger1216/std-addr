@@ -14,6 +14,7 @@ import { useCrudMutations } from "@/lib/crud/use-crud-mutations";
 import { toApiError } from "@/lib/api/error";
 import type { CandidatePool } from "@/lib/addr-sim/generator";
 import { toRuleRows } from "@/lib/addr-sim/rule-mappers";
+import type { AddrSimLabel, AddrSimLabelConfig } from "@/lib/validators/addr-sim";
 
 import { api } from "@/trpc/react";
 
@@ -56,6 +57,9 @@ export function AddrSimPage() {
   const { data: labels } = api.addrSim.labels.useQuery();
   const { data: ruleList } = api.addrSim.ruleList.useQuery();
 
+  // P0-6:把 labels query 结果按 AddrSimLabel 类型收窄(后端已 zod 解析,这里加一层防御性 cast)
+  const labelOptions = (labels ?? []) as unknown as AddrSimLabel[];
+
   const utils = api.useUtils();
 
   // —— 规则 CRUD ——
@@ -87,6 +91,17 @@ export function AddrSimPage() {
     onError: (e) => toast.error(toApiError(e).message),
   });
 
+  // "保存到要素":把步骤生效配置写回地址要素默认(label.update),刷新 labels 供规则编辑器继承
+  const saveLabel = api.label.update.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.addrSim.invalidate(),
+        utils.label.invalidate(),
+      ]);
+    },
+    onError: (e) => toast.error(toApiError(e).message),
+  });
+
   // —— 编辑状态 ——
   const { selectedIds, editingId, editingName, draftSteps } = useAddrSimRuleState();
   const actions = useAddrSimActions();
@@ -108,7 +123,16 @@ export function AddrSimPage() {
     );
   }, [rules, actions]);
 
-  // —— 规则操作(保存/复制/全局同步/导入 + 批量占比)——抽到 hooks/use-rule-actions
+  // 同步要素 name → 中文显示名(规则名自动拼接用)
+  useEffect(() => {
+    actions.setLabelMap(
+      Object.fromEntries(
+        (labels ?? []).map((l) => [l.name, l.label ?? l.name]),
+      ),
+    );
+  }, [labels, actions]);
+
+  // —— 规则操作(保存/复制/保存到要素/导入 + 批量占比)——抽到 hooks/use-rule-actions
   const ruleActions = useRuleActions({
     rules,
     editingId,
@@ -117,6 +141,11 @@ export function AddrSimPage() {
     reallocate: {
       mutate: (input: { updates: Array<{ id: string; radio: number }> }) =>
         batchRadio.mutate(input),
+    },
+    labels: labelOptions,
+    saveLabel: {
+      mutateAsync: (input: { id: string; data: AddrSimLabelConfig | null }) =>
+        saveLabel.mutateAsync(input),
     },
     onImportDialogChange: setImportOpen,
   });
@@ -134,7 +163,6 @@ export function AddrSimPage() {
   }
 
   const pool = candidates ?? EMPTY_POOL;
-  const labelOptions = labels ?? [];
 
   // 编辑中的规则被删除:保留草稿转"新建"态,不丢未保存内容
   useEffect(() => {
@@ -194,7 +222,7 @@ export function AddrSimPage() {
                   candidates={pool}
                   isPending={isEditorPending}
                   onSave={ruleActions.handleSave}
-                  onUpdateAll={ruleActions.handleUpdateAll}
+                  onSaveToElement={ruleActions.handleSaveToElement}
                 />
               ) : candidatesLoading ? (
                 <div className="space-y-2">
@@ -225,6 +253,7 @@ export function AddrSimPage() {
               rules={rules}
               selectedIds={selectedIds}
               candidates={pool}
+              labels={labelOptions}
             />
           </CardContent>
         </Card>

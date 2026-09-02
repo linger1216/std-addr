@@ -14,18 +14,21 @@ export function NumField({
   min,
   max,
   className,
+  disabled = false,
 }: {
   value: number;
   onChange: (v: number) => void;
   min: number;
   max: number;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <Input
       type="number"
       value={Number.isFinite(value) ? value : ""}
       onChange={(e) => {
+        if (disabled) return;
         const raw = e.target.value;
         if (raw === "") {
           onChange(min);
@@ -37,6 +40,7 @@ export function NumField({
       }}
       min={min}
       max={max}
+      disabled={disabled}
       className={cn("h-7 w-16 px-2 text-[12.5px] tabular-nums", className)}
     />
   );

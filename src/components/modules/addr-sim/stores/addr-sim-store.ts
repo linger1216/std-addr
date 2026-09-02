@@ -34,12 +34,14 @@ function newStepId(): string {
   return `step-${stepSeq}`;
 }
 
-/** 默认新步骤:实体表来源(road) */
+/**
+ * 默认新步骤:P0-6 起,数据源默认为空,引用 Label.data 默认配置。
+ * 后续用户可在步骤里添加 randomValue/customValue/randomNumber/randomChinese override。
+ */
 export function defaultStep(): AddrSimStep {
   return {
     name: "",
-    randomValue: { name: "road" },
-    skipRate: 0,
+    // skipRate 不设默认(undefined)→ 生成时引用 label 默认整体跳过率
   };
 }
 
@@ -49,13 +51,17 @@ export function toEditorSteps(steps: AddrSimStep[]): EditorStep[] {
     id: newStepId(),
     step: {
       ...s,
-      // 深拷贝数组字段,避免共享引用
-      randomValue: s.randomValue ? { ...s.randomValue } : undefined,
-      customValue: s.customValue
-        ? { ...s.customValue, list: [...(s.customValue.list ?? [])] }
+      // 深拷贝 data(各源)+ prefix/suffix 的数组字段,避免共享引用
+      data: s.data
+        ? {
+            randomValue: s.data.randomValue ? { ...s.data.randomValue } : undefined,
+            customValue: s.data.customValue
+              ? { ...s.data.customValue, list: [...(s.data.customValue.list ?? [])] }
+              : undefined,
+            randomNumber: s.data.randomNumber ? { ...s.data.randomNumber } : undefined,
+            randomChinese: s.data.randomChinese ? { ...s.data.randomChinese } : undefined,
+          }
         : undefined,
-      randomNumber: s.randomNumber ? { ...s.randomNumber } : undefined,
-      randomChinese: s.randomChinese ? { ...s.randomChinese } : undefined,
       prefix: s.prefix
         ? { ...s.prefix, texts: [...(s.prefix.texts ?? [])] }
         : undefined,
@@ -86,10 +92,12 @@ interface State {
   editingStatus: 0 | 1;
   draftSteps: EditorStep[];
   /**
-   * 用户是否主动改过 name 输入框。true 时不再按 steps.name 拼接自动重命名,
-   * 避免覆盖用户自定义名;false 时,任意 step.name 变化都会把 editingName 同步为拼接结果。
+   * 用户是否主动改过 name 输入框。true 时不再按 steps 拼接自动重命名,
+   * 避免覆盖用户自定义名;false 时,任意步骤增删/改序/换要素都会把 editingName 同步为拼接结果。
    */
   nameEdited: boolean;
+  /** 地址要素 name → 中文显示名(label),用于规则名自动拼接(名 = 要素中文名以 - 连接) */
+  labelMap: Record<string, string>;
 
   // —— 生成区 ——
   totalCount: number;
@@ -106,6 +114,8 @@ interface Actions {
   setSelected: (ids: string[]) => void;
   /** 同步规则占比表(ruleList 加载/刷新时调用) */
   setRadioMap: (map: Record<string, number | null>) => void;
+  /** 同步地址要素 name → 中文显示名映射(规则名自动拼接用) */
+  setLabelMap: (map: Record<string, string>) => void;
 
   // 编辑器
   openCreate: () => void;
@@ -146,6 +156,17 @@ function arrayMove<T>(arr: T[], from: number, to: number): T[] {
   return next;
 }
 
+/** 规则名 = 步骤要素中文名按 - 拼接(空名跳过);无有效步骤 → "" */
+function deriveRuleName(
+  drafts: EditorStep[],
+  labelMap: Record<string, string>,
+): string {
+  const parts = drafts
+    .map((d) => labelMap[d.step.name] ?? d.step.name)
+    .filter((n) => n.trim() !== "");
+  return parts.join("-");
+}
+
 export const useAddrSimStore = create<State & Actions>()((set, get) => ({
   selectedIds: [],
   radioMap: {},
@@ -155,6 +176,7 @@ export const useAddrSimStore = create<State & Actions>()((set, get) => ({
   editingStatus: 1,
   draftSteps: [],
   nameEdited: false,
+  labelMap: {},
 
   totalCount: 1000,
   ratios: {},
@@ -197,6 +219,8 @@ export const useAddrSimStore = create<State & Actions>()((set, get) => ({
   },
 
   setRadioMap: (map) => set({ radioMap: map }),
+
+  setLabelMap: (map) => set({ labelMap: map }),
 
   openCreate: () =>
     set({
@@ -252,9 +276,12 @@ export const useAddrSimStore = create<State & Actions>()((set, get) => ({
   markNameEdited: () => set({ nameEdited: true }),
 
   addStep: (step) => {
-    const drafts = [...get().draftSteps];
+    const state = get();
+    const drafts = [...state.draftSteps];
     drafts.push({ id: newStepId(), step: step ?? defaultStep() });
-    set({ draftSteps: drafts });
+    const next: Partial<State> = { draftSteps: drafts };
+    if (!state.nameEdited) next.editingName = deriveRuleName(drafts, state.labelMap);
+    set(next);
   },
 
   updateStep: (id, step) => {
@@ -266,14 +293,12 @@ export const useAddrSimStore = create<State & Actions>()((set, get) => ({
     const nextDrafts = state.draftSteps.map((d) =>
       d.id === id ? { ...d, step } : d,
     );
-    // 若用户尚未主动改名 → 按 steps.name 拼接重派生(同步反映要素改动)
+    // 若用户尚未主动改名 → 按要素中文名重新拼接(增删/改序/换要素都会同步)
     if (nameChanged && !state.nameEdited) {
-      const derived = nextDrafts.map((d) => d.step.name).join("-") || "提取规则";
       set({
         draftSteps: nextDrafts,
-        editingName: derived,
-        // 标 true:派生过的 name 视为用户也已"确认"过,避免后续编辑反向覆盖
-        nameEdited: true,
+        editingName: deriveRuleName(nextDrafts, state.labelMap),
+        // 注意:不把 nameEdited 置 true —— 后续改动仍会重新拼接,只有用户手动改名才停止
       });
     } else {
       set({ draftSteps: nextDrafts });
@@ -281,15 +306,22 @@ export const useAddrSimStore = create<State & Actions>()((set, get) => ({
   },
 
   removeStep: (id) => {
-    set({ draftSteps: get().draftSteps.filter((d) => d.id !== id) });
+    const state = get();
+    const drafts = state.draftSteps.filter((d) => d.id !== id);
+    const next: Partial<State> = { draftSteps: drafts };
+    if (!state.nameEdited) next.editingName = deriveRuleName(drafts, state.labelMap);
+    set(next);
   },
 
   moveStep: (from, to) => {
-    const drafts = get().draftSteps;
-    if (from < 0 || from >= drafts.length || to < 0 || to >= drafts.length) {
+    const state = get();
+    if (from < 0 || from >= state.draftSteps.length || to < 0 || to >= state.draftSteps.length) {
       return;
     }
-    set({ draftSteps: arrayMove(drafts, from, to) });
+    const drafts = arrayMove(state.draftSteps, from, to);
+    const next: Partial<State> = { draftSteps: drafts };
+    if (!state.nameEdited) next.editingName = deriveRuleName(drafts, state.labelMap);
+    set(next);
   },
 
   setTotalCount: (n) => set({ totalCount: Math.max(1, Math.min(100000, n)) }),
@@ -362,6 +394,7 @@ type ActionsSlice = Pick<
   | "clearSelect"
   | "setSelected"
   | "setRadioMap"
+  | "setLabelMap"
   | "openCreate"
   | "openEdit"
   | "closeEditor"
@@ -382,6 +415,7 @@ export function useAddrSimActions(): ActionsSlice {
       clearSelect: s.clearSelect,
       setSelected: s.setSelected,
       setRadioMap: s.setRadioMap,
+      setLabelMap: s.setLabelMap,
       openCreate: s.openCreate,
       openEdit: s.openEdit,
       closeEditor: s.closeEditor,
