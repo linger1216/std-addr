@@ -92,11 +92,22 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
   } = opts;
 
   // —— 列宽状态(localStorage 持久化;缺省 storageKey 则仅会话内) ——
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() =>
-    storageKey ? readColumnSizing(storageKey) : {},
-  );
+  // 注意:初始 state 必须为空,且持久化宽度在「挂载后」才读取。
+  // 若在 useState 初始化函数里读 localStorage,客户端水合首渲染会带出持久化宽度,
+  // 而服务端 window 不存在返回空 → SSR/CSR 不一致(hydration mismatch)。
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    if (!storageKey) return;
+    if (!storageKey) {
+      setHydrated(true);
+      return;
+    }
+    setColumnSizing(readColumnSizing(storageKey));
+    setHydrated(true);
+  }, [storageKey]);
+  // 持久化推迟到挂载完成,避免把初始空值写回、覆盖已存宽度
+  useEffect(() => {
+    if (!storageKey || !hydrated) return;
     try {
       window.localStorage.setItem(
         COLUMN_SIZING_PREFIX + storageKey,
@@ -105,7 +116,7 @@ export function useCrudTable<T>(opts: UseCrudTableOptions<T>) {
     } catch {
       // 存储不可用(隐私模式/配额)时静默降级为会话内生效
     }
-  }, [storageKey, columnSizing]);
+  }, [storageKey, hydrated, columnSizing]);
 
   const table = useAppTable({
     data: data as never,

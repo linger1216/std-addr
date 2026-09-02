@@ -24,6 +24,45 @@ export interface StandardizeResult {
   fields: StdFields;
 }
 
+/**
+ * 标准化单步 trace(debug 模式返回,用于前端展示「过程」)。
+ * input/output 为该步骤的输入与输出(可序列化);matched 为「命中的结果」
+ * (如 ML 解析出的要素、DB 匹配的实体、region 行政链);status 标注步骤状态。
+ */
+export interface StandardizeStep {
+  index: number;
+  name: string;
+  input?: unknown;
+  output?: unknown;
+  matched?: unknown;
+  note?: string;
+  status?: "ok" | "skip" | "fail";
+}
+
+/** unknown → 紧凑可读文本(用于 log) */
+function safeString(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") return v;
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return "[unserializable]";
+    }
+}
+
+/** trace → 每步一行的可读日志(前端「原始日志」视图) */
+export function traceToLog(steps: StandardizeStep[]): string[] {
+  return steps.map((s) => {
+    const status = s.status ? ` [${s.status}]` : "";
+    const parts = [`${s.index}. ${s.name}${status}`];
+    if (s.input !== undefined) parts.push(`   输入: ${safeString(s.input)}`);
+    if (s.output !== undefined) parts.push(`   输出: ${safeString(s.output)}`);
+    if (s.matched !== undefined) parts.push(`   命中: ${safeString(s.matched)}`);
+    if (s.note) parts.push(`   备注: ${s.note}`);
+    return parts.join("\n");
+  });
+}
+
 /** 简单 LRU 缓存(Redis 降级;上限 1000 条) */
 class LruCache {
   private map = new Map<string, StandardizeResult>();
@@ -312,14 +351,31 @@ function toStdFields(data: Record<string, unknown>): StdFields {
 }
 
 class StandardizeService {
-  /** 标准化单个地址(10 步流水线) */
-  async standardize(rawAddress: string): Promise<StandardizeResult> {
-    const res: {
-      rawAddress: string;
-      stdAddress: string;
-      stdScore: number;
-      fields: StdFields;
-    } = {
+  /**
+   * 标准化单个地址(10 步流水线)。
+   * debug=true 时收集每步 trace(输入/输出/命中),即使 ML 失败也降级返回(不抛错),
+   * 供前端展示「标准化过程」。非 debug 行为完全不变(零开销、网络失败照常抛错)。
+   */
+  async standardize(
+    rawAddress: string,
+    opts?: { debug?: boolean },
+  ): Promise<StandardizeResult & { trace?: StandardizeStep[]; log?: string[] }> {
+    const debug = opts?.debug ?? false;
+    const trace: StandardizeStep[] = [];
+    const push = (
+      name: string,
+      input?: unknown,
+      output?: unknown,
+      extra?: {
+        matched?: unknown;
+        note?: string;
+        status?: StandardizeStep["status"];
+      },
+    ) => {
+      trace.push({ index: trace.length + 1, name, input, output, ...extra });
+    };
+
+    const res: StandardizeResult = {
       rawAddress,
       stdAddress: "",
       stdScore: 0,
@@ -328,18 +384,52 @@ class StandardizeService {
 
     // ====== 1. 预处理 ======
     const cleaned = preprocessRaw(rawAddress);
+    if (debug) push("预处理", rawAddress, cleaned);
 
     // ====== 1.5 缓存命中 ======
     if (cleaned) {
       const cached = cache.get(`std:${cleaned}`);
-      if (cached) return { ...cached, rawAddress };
+      if (cached) {
+        if (debug) {
+          push("缓存命中(直接返回)", cleaned, cached, {
+            status: "skip",
+            note: "命中进程内缓存,跳过后续步骤",
+          });
+        }
+        return finalize({ ...cached, rawAddress }, debug, trace);
+      }
+      if (debug) push("缓存查找", cleaned, null, { status: "skip", note: "未命中" });
     }
 
-    // ====== 2. ML 解析 ======
-    res.fields = cleaned.trim().length > 0 ? await mlParse(cleaned) : {};
+    // ====== 2. ML 解析(NER /api/format) ======
+    try {
+      res.fields = cleaned.trim().length > 0 ? await mlParse(cleaned) : {};
+      if (debug) {
+        push("ML 解析(NER)", cleaned, res.fields, {
+          matched: res.fields,
+          note: "模型 /api/format 返回的 27 要素",
+        });
+      }
+    } catch (err) {
+      res.fields = {};
+      const msg = err instanceof Error ? err.message : String(err);
+      if (debug) {
+        // debug 模式:降级继续(用空字段拼出结果),不抛错,便于展示失败步骤
+        push("ML 解析(NER)", cleaned, null, {
+          status: "fail",
+          note: `模型服务异常,降级继续:${msg}`,
+        });
+      } else {
+        throw err; // 非 debug 保持原语义:网络/HTTP 层失败抛错
+      }
+    }
 
+    // ====== 3~10:后续步骤(debug 下任意异常降级返回 partial trace) ======
+    try {
     // ====== 3. 清洗 ML 逗号污染 ======
+    const beforeClean = { ...res.fields };
     cleanFields(res.fields);
+    if (debug) push("清洗 ML 字段", beforeClean, res.fields);
 
     // road_number → number(旧算法规格)
     if (res.fields.road_number) {
@@ -348,32 +438,65 @@ class StandardizeService {
     }
 
     // ====== 4. 中文数字转阿拉伯(team/group,十位展开) ======
+    const beforeNum = { team: res.fields.team, group: res.fields.group };
     if (res.fields.team) res.fields.team = normalizeChineseNum(res.fields.team);
     if (res.fields.group) res.fields.group = normalizeChineseNum(res.fields.group);
+    if (debug) {
+      push("中文数字转阿拉伯", beforeNum, {
+        team: res.fields.team,
+        group: res.fields.group,
+      });
+    }
 
     // ====== 5. 上下文推断(向上反查省市) ======
-    await this.inferAdmin(res.fields);
+    await this.inferAdmin(res.fields, debug ? trace : undefined);
 
     // ====== 6. 数据库匹配覆盖 ======
-    await this.matchAnythingEntity(res.fields);
+    await this.matchAnythingEntity(res.fields, debug ? trace : undefined);
 
     // ====== 7. 行政去重 ======
+    const beforeDedup = { ...res.fields };
     deduplicateAdmin(res.fields);
+    if (debug) push("行政去重", beforeDedup, res.fields);
 
     // ====== 8. 拼接标准地址 ======
     res.stdAddress = buildStdAddress(res.fields);
+    if (debug) push("拼接标准地址", res.fields, res.stdAddress);
 
     // ====== 9. 评分 ======
     res.stdScore = calcScore(res.fields);
+    if (debug) push("评分", res.fields, res.stdScore);
 
-    // ====== 10. 缓存(去 logs,本实现无 logs) ======
+    // ====== 10. 缓存写入 ======
     if (cleaned) cache.set(`std:${cleaned}`, res);
+    if (debug) {
+      push("缓存写入", null, `std:${cleaned}`, {
+        status: "skip",
+        note: "进程内 LRU 缓存",
+      });
+    }
 
-    return res;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (debug) {
+        // debug 模式:降级返回已收集的过程(含失败步),不抛错
+        push("异常中断", undefined, undefined, {
+          status: "fail",
+          note: `后续步骤异常,降级返回已收集过程:${msg}`,
+        });
+        return finalize(res, true, trace);
+      }
+      throw err; // 非 debug 照常抛错
+    }
+
+    return finalize(res, debug, trace);
   }
 
   /** 上下文推断:锚点(街/镇/区/市/省)→ region 表反查行政链 */
-  private async inferAdmin(fields: StdFields): Promise<void> {
+  private async inferAdmin(
+    fields: StdFields,
+    trace?: StandardizeStep[],
+  ): Promise<void> {
     const anchors = [
       fields.street, fields.town, fields.district, fields.city, fields.province,
     ].filter(Boolean);
@@ -383,14 +506,34 @@ class StandardizeService {
       region = await db.region.findFirst({ where: { name } });
       if (region) break;
     }
-    if (!region) return;
+    if (!region) {
+      trace?.push({
+        index: trace.length + 1,
+        name: "上下文推断(region 反查)",
+        input: anchors,
+        status: "skip",
+        note: "无锚点命中 region 表",
+      });
+      return;
+    }
 
     const [, admin] = await getRegionAncestors(region.id);
     Object.assign(fields, admin);
+    trace?.push({
+      index: trace.length + 1,
+      name: "上下文推断(region 反查)",
+      input: anchors,
+      output: admin,
+      matched: admin,
+      note: `命中 region:${region.name}`,
+    });
   }
 
   /** 数据库匹配覆盖:小区/子区域/POI/村(缺失表降级,仅行政路径填充) */
-  private async matchAnythingEntity(fields: StdFields): Promise<void> {
+  private async matchAnythingEntity(
+    fields: StdFields,
+    trace?: StandardizeStep[],
+  ): Promise<void> {
     const adminFields: AdminFields = {
       province: fields.province,
       city: fields.city,
@@ -398,6 +541,32 @@ class StandardizeService {
       street: fields.street,
       town: fields.town,
       neighborhood: fields.neighborhood,
+    };
+
+    const recordMatch = (
+      label: string,
+      name: string,
+      row: { id: string; name: string; regionId: string | null } | null,
+      note?: string,
+    ) => {
+      if (row) {
+        trace?.push({
+          index: trace.length + 1,
+          name: `DB 匹配(${label})`,
+          input: name,
+          output: row.name,
+          matched: { id: row.id, name: row.name },
+          note,
+        });
+      } else {
+        trace?.push({
+          index: trace.length + 1,
+          name: `DB 匹配(${label})`,
+          input: name,
+          status: "skip",
+          note: "未命中",
+        });
+      }
     };
 
     // 1. 小区匹配
@@ -412,6 +581,14 @@ class StandardizeService {
             if (hasAnyAdmin(subFields)) {
               Object.assign(fields, subFields);
             }
+            trace?.push({
+              index: trace.length + 1,
+              name: "DB 匹配(子区域)",
+              input: fields.subarea,
+              output: subareaMatch.name,
+              matched: subareaMatch,
+              note: `绑定小区 ${communityMatch.name}`,
+            });
           }
         }
         // 行政路径填充(以小区为准,覆盖子区域结果)
@@ -419,6 +596,9 @@ class StandardizeService {
         if (hasAnyAdmin(fields2)) {
           Object.assign(fields, fields2);
         }
+        recordMatch("小区", fields.community, communityMatch, `行政链填充:${safeString(fields2)}`);
+      } else {
+        recordMatch("小区", fields.community, null);
       }
     }
 
@@ -430,6 +610,9 @@ class StandardizeService {
         if (hasAnyAdmin(poiFields)) {
           Object.assign(fields, poiFields);
         }
+        recordMatch("POI", fields.poi, matchPoi);
+      } else {
+        recordMatch("POI", fields.poi, null);
       }
     }
 
@@ -441,10 +624,23 @@ class StandardizeService {
         if (hasAnyAdmin(villageFields)) {
           Object.assign(fields, villageFields);
         }
+        recordMatch("村", fields.village, matchVillage);
+      } else {
+        recordMatch("村", fields.village, null);
       }
     }
     // 路弄号映射(RoadLaneNumber/Ref)缺失 → 降级跳过
   }
+}
+
+/** 最终返回:debug 时附 trace/log,非 debug 仅基础结果(零开销) */
+function finalize(
+  result: StandardizeResult,
+  debug: boolean,
+  trace: StandardizeStep[],
+): StandardizeResult & { trace?: StandardizeStep[]; log?: string[] } {
+  if (!debug) return result;
+  return { ...result, trace, log: traceToLog(trace) };
 }
 
 export const standardizeService = new StandardizeService();

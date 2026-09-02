@@ -205,3 +205,56 @@ describe("standardizeService 10 步流水线", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("standardizeService debug trace", () => {
+  it("non-debug 不返回 trace;debug 返回 trace 且步骤名齐全 + log 对齐", async () => {
+    mlOk({ road: "永跃路", number: "260号" });
+
+    const normal = await standardizeService.standardize("永跃路260号");
+    expect(normal.trace).toBeUndefined();
+    expect(normal.log).toBeUndefined();
+
+    clearStandardizeCache(); // 避免命中上一次调用的缓存,保证走完整流水线
+    const res = await standardizeService.standardize("永跃路260号", { debug: true });
+    expect(res.trace).toBeDefined();
+    const names = res.trace!.map((s) => s.name);
+    for (const expected of [
+      "预处理",
+      "ML 解析(NER)",
+      "清洗 ML 字段",
+      "中文数字转阿拉伯",
+      "行政去重",
+      "拼接标准地址",
+      "评分",
+      "缓存写入",
+    ]) {
+      expect(names).toContain(expected);
+    }
+    expect(res.log).toBeDefined();
+    expect(res.log!.length).toBe(res.trace!.length);
+  });
+
+  it("debug 模式 ML 网络失败:降级返回 partial trace(含 fail 步),不抛错", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+
+    const res = await standardizeService.standardize("永跃路260弄", { debug: true });
+    expect(res.stdAddress).toBe(""); // 降级:空字段拼出空结果
+    expect(res.trace).toBeDefined();
+    const failStep = res.trace!.find((s) => s.name === "ML 解析(NER)");
+    expect(failStep?.status).toBe("fail");
+  });
+
+  it("debug trace 记录 DB 匹配命中(community 行政链填充)", async () => {
+    mlOk({ community: "阳光花园", building: "16号", room: "701室" });
+    dbMock.community.findMany.mockResolvedValue([
+      { id: "c1", name: "阳光花园", regionId: "1254" },
+    ]);
+    mockRegionTree(regionTree());
+
+    const res = await standardizeService.standardize("阳光花园16号701室", { debug: true });
+    const matchStep = res.trace!.find((s) => s.name === "DB 匹配(小区)");
+    expect(matchStep).toBeDefined();
+    expect(matchStep!.status).not.toBe("skip");
+    expect((matchStep!.matched as { name: string }).name).toBe("阳光花园");
+  });
+});

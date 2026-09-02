@@ -141,12 +141,19 @@ export const stdAddressRouter = createTRPCRouter({
       ctx.db.stdAddress.findUnique({ where: { id: input.id } }),
     ),
 
-  /** 核心:单条标准化(不落库,返回结果) */
+  /** 核心:单条标准化(不落库,返回结果)。debug=true 时附 trace/log 用于展示标准化过程 */
   standardize: adminProcedure
-    .input(z.object({ rawAddress: z.string().trim().min(1).max(500) }))
+    .input(
+      z.object({
+        rawAddress: z.string().trim().min(1).max(500),
+        debug: z.boolean().optional(),
+      }),
+    )
     .mutation(async ({ input }) => {
       try {
-        const result = await standardizeService.standardize(input.rawAddress);
+        const result = await standardizeService.standardize(input.rawAddress, {
+          debug: input.debug,
+        });
         return { ok: true, ...result };
       } catch (err) {
         return { ok: false, error: toErrorMessage(err) };

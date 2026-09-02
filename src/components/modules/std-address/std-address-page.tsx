@@ -16,6 +16,7 @@ import {
   createStdAddressColumns,
   type StdAddressRow,
 } from "./std-address-table";
+import { StdAddressCardGrid } from "./std-address-card-grid";
 import { StdAddressToolbar } from "./std-address-toolbar";
 import { StdAddressDetailDialog } from "./std-address-detail";
 import { StdAddressImportDialog } from "./std-address-import-dialog";
@@ -70,6 +71,9 @@ export function StdAddressPage() {
   // —— 2. UI store(分页/排序/选中/dialog)——
   const state = useStdAddressState();
   const actions = useStdAddressActions();
+
+  // 视图:卡片 / 表格(默认卡片,适配 27 要素宽表)
+  const [view, setView] = useState<"table" | "card">("card");
 
   // —— 3. tRPC utils ——
   const utils = api.useUtils();
@@ -302,6 +306,25 @@ export function StdAddressPage() {
     batchStandardize.mutate({ ids: selectedIds });
   }
 
+  // —— 11.5 卡片视图的选中(全选本页 / 单条切换)——
+  // 直接更新 store.rowSelection,useCrudTable 会据此派生 selectedIds(与表格视图共用一份选中态)
+  function toggleRow(id: string) {
+    const next = { ...state.rowSelection };
+    if (next[id]) delete next[id];
+    else next[id] = true;
+    actions.setRowSelection(next);
+  }
+  function toggleAll() {
+    const allSelected =
+      rows.length > 0 && rows.every((r) => state.rowSelection[r.id]);
+    const next = { ...state.rowSelection };
+    for (const r of rows) {
+      if (allSelected) delete next[r.id];
+      else next[r.id] = true;
+    }
+    actions.setRowSelection(next);
+  }
+
   // —— 12. 派生显示数据 ——
   const editingFormInitial: StdAddressDetail | null =
     state.editingId && editingData ? editingData : null;
@@ -326,6 +349,8 @@ export function StdAddressPage() {
 
       <Reveal delay={60} className="shrink-0">
         <StdAddressToolbar
+          view={view}
+          onViewChange={setView}
           selectedCount={selectedIds.length}
           isStandardizing={batchStandardize.isPending}
           onCreate={actions.openCreate}
@@ -337,18 +362,36 @@ export function StdAddressPage() {
       </Reveal>
 
       <Reveal delay={120} className="min-h-0 flex-1">
-        <StdAddressTable
-          table={table}
-          isLoading={listLoading}
-          columnSizing={columnSizing}
-          onColumnSizingChange={onColumnSizingChange}
-          callbacks={{
-            onView: (row) => actions.openView(row.id),
-            onEdit: (row) => actions.openEdit(row.id),
-            onDelete: (row) =>
-              actions.requestDelete({ id: row.id, name: row.rawAddress }),
-          }}
-        />
+        {view === "card" ? (
+          <StdAddressCardGrid
+            rows={rows}
+            isLoading={listLoading}
+            rowSelection={state.rowSelection}
+            onToggleRow={toggleRow}
+            onToggleAll={toggleAll}
+            sorting={state.sorting}
+            onSortChange={actions.setSorting}
+            callbacks={{
+              onView: (row) => actions.openView(row.id),
+              onEdit: (row) => actions.openEdit(row.id),
+              onDelete: (row) =>
+                actions.requestDelete({ id: row.id, name: row.rawAddress }),
+            }}
+          />
+        ) : (
+          <StdAddressTable
+            table={table}
+            isLoading={listLoading}
+            columnSizing={columnSizing}
+            onColumnSizingChange={onColumnSizingChange}
+            callbacks={{
+              onView: (row) => actions.openView(row.id),
+              onEdit: (row) => actions.openEdit(row.id),
+              onDelete: (row) =>
+                actions.requestDelete({ id: row.id, name: row.rawAddress }),
+            }}
+          />
+        )}
       </Reveal>
 
       <div className="shrink-0">

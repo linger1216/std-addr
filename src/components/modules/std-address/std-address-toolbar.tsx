@@ -3,11 +3,13 @@
 import { AnimatePresence, motion } from "motion/react";
 import {
   Download,
+  LayoutGrid,
   Plus,
   RotateCcw,
   Search,
   SearchIcon,
   Sparkles,
+  Table as TableIcon,
   Trash2,
   Upload,
   X,
@@ -16,9 +18,12 @@ import {
 import { Button, MotionButton } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
+import { cn } from "@/lib/utils";
 import { useStdAddressQueryParams } from "./use-std-address-query-params";
 
 export function StdAddressToolbar({
+  view,
+  onViewChange,
   selectedCount,
   isStandardizing,
   onCreate,
@@ -27,6 +32,8 @@ export function StdAddressToolbar({
   onBatchDelete,
   onBatchStandardize,
 }: {
+  view: "table" | "card";
+  onViewChange: (next: "table" | "card") => void;
   selectedCount: number;
   isStandardizing: boolean;
   onCreate: () => void;
@@ -147,6 +154,38 @@ export function StdAddressToolbar({
       </div>
 
       <div className="flex items-center justify-end gap-2">
+        {/* 视图切换:卡片 / 表格 */}
+        <div className="flex items-center rounded-xl border border-border bg-card p-0.5">
+          <button
+            type="button"
+            aria-label="卡片视图"
+            aria-pressed={view === "card"}
+            onClick={() => onViewChange("card")}
+            className={cn(
+              "flex size-7 items-center justify-center rounded-lg transition-colors",
+              view === "card"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <LayoutGrid className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="表格视图"
+            aria-pressed={view === "table"}
+            onClick={() => onViewChange("table")}
+            className={cn(
+              "flex size-7 items-center justify-center rounded-lg transition-colors",
+              view === "table"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <TableIcon className="size-3.5" />
+          </button>
+        </div>
+
         {selectedCount > 0 && (
           <>
             <Button
