@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
-import type { PrismaClient, Prisma } from "../../../../generated/prisma/client";
+import { Prisma, type PrismaClient } from "../../../../generated/prisma/client";
 import { createTRPCRouter, adminProcedure } from "@/server/api/trpc";
 import {
   regionCreateSchema,
@@ -14,6 +14,7 @@ import {
   type RegionImportItem,
 } from "@/lib/region-import";
 import { toRegionIdOrNull } from "@/lib/constants";
+import { parseAliasEntries } from "@/lib/alias-entries";
 
 /** 树节点(含 children,给前端左侧树用) */
 export type RegionTreeNode = {
@@ -22,6 +23,7 @@ export type RegionTreeNode = {
   name: string;
   level: number;
   type: string | null;
+  alias: Prisma.JsonValue | null;
   parentCode: string | null;
   fullName: string | null;
   sortOrder: number;
@@ -84,6 +86,7 @@ export const regionRouter = createTRPCRouter({
         name: true,
         level: true,
         type: true,
+        alias: true,
         parentCode: true,
         fullName: true,
         sortOrder: true,
@@ -127,6 +130,7 @@ export const regionRouter = createTRPCRouter({
           name: input.name,
           level: parent ? parent.level + 1 : 1,
           type: input.type ?? null,
+          alias: toNullableAlias(input.alias),
           parentCode,
           fullName: parent
             ? joinFullName(parent.fullName, input.name)
@@ -152,6 +156,7 @@ export const regionRouter = createTRPCRouter({
       const data: Prisma.RegionUncheckedUpdateInput = {};
       if (input.name !== undefined) data.name = input.name;
       if (input.type !== undefined) data.type = input.type ?? null;
+      if (input.alias !== undefined) data.alias = toNullableAlias(input.alias);
       if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder;
       if (input.status !== undefined) data.status = input.status;
 
@@ -578,6 +583,23 @@ function toRegionData(
     fullName: item.fullName,
     sortOrder: item.sortOrder,
     type: item.type ?? null,
+    alias: toNullableAlias(item.alias),
     status: 1,
   };
+}
+
+/**
+ * 别名(JSON 列)归一 —— 多值数组形式(对齐 village / community 模块)。
+ *   - undefined / 空数组 / 元素全空 → JsonNull(等价 NULL,清空列)
+ *   - 否则 → 字符串数组(Prisma 序列化为 JSON 数组)
+ *
+ * 兼容:旧客户端若传单个字符串 / JSON 字符串,parseAliasEntries 会展平成数组;
+ * 兼容 region.json 导入的别名字段(任意可解析形态)与历史脏数据。
+ */
+function toNullableAlias(
+  v: string | string[] | undefined,
+): string[] | typeof Prisma.JsonNull {
+  const list = parseAliasEntries(v);
+  if (list.length === 0) return Prisma.JsonNull;
+  return list;
 }

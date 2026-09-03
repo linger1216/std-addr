@@ -14,7 +14,6 @@ export const STD_ADDRESS_FIELD_KEYS = [
   "district",
   "street",
   "town",
-  "township",
   "community",
   "village",
   "subarea",

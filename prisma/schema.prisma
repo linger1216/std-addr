@@ -130,6 +130,7 @@ model Region {
     name       String
     level      Int
     type       String?
+    alias      Json?    @map("alias")
     parentCode String?  @map("parent_code")
     fullName   String?  @map("full_name")
     sortOrder  Int      @default(0) @map("sort_order")
@@ -314,7 +315,6 @@ model StdAddress {
     district    String?  @map("district")
     street      String?  @map("street")
     town        String?  @map("town")
-    township    String?  @map("township")
     community   String?  @map("community")
     village     String?  @map("village")
     subarea     String?  @map("subarea")

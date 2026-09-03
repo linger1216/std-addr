@@ -19,6 +19,7 @@ import {
 import { StdAddressCardGrid } from "./std-address-card-grid";
 import { StdAddressToolbar } from "./std-address-toolbar";
 import { StdAddressDetailDialog } from "./std-address-detail";
+import { StdAddressParseDialog } from "./std-address-parse-dialog";
 import { StdAddressImportDialog } from "./std-address-import-dialog";
 import {
   Dialog,
@@ -43,6 +44,7 @@ import { useCrudExcel } from "@/lib/crud/use-crud-excel";
 import { useCrudMutations } from "@/lib/crud/use-crud-mutations";
 import { useCrudTable } from "@/lib/crud/use-crud-table";
 import { toApiError } from "@/lib/api/error";
+import { mapFieldsToPersist } from "@/lib/standardize/persist";
 import { toast } from "sonner";
 
 import { api } from "@/trpc/react";
@@ -149,6 +151,44 @@ export function StdAddressPage() {
       // 只落原始地址;标准地址与评分由「批量标准化」统一生成
       autoStandardize: false,
     });
+  }
+
+  // —— 4.7 准入(新建「解析→预览」流程的最后一步:把草稿 insert 落库)——
+  const admitMut = api.stdAddress.create.useMutation({
+    onSuccess: async () => {
+      await utils.stdAddress.invalidate();
+      actions.closePreview();
+      actions.clearSelection();
+      toast.success("已准入新记录");
+    },
+    onError: (e) => toast.error(toApiError(e).message),
+  });
+
+  function handleAdmit() {
+    const d = state.previewDraft;
+    if (!d) return;
+    admitMut.mutate({
+      rawAddress: d.rawAddress,
+      stdAddress: d.stdAddress ?? undefined,
+      status: d.status ?? 1,
+      // NER 要素键 → 表列名映射后写入(与 standardizeBatch/import 同路径)
+      ...mapFieldsToPersist(d.fields),
+    });
+  }
+
+  // —— 4.8 卡片「解析」:重新解析单条并落库(不带 debug,直接赋值)——
+  const parseOneMut = api.stdAddress.standardizeBatch.useMutation({
+    onSuccess: async (res) => {
+      await utils.stdAddress.invalidate();
+      toast.success(
+        res.failed > 0 ? `解析失败 ${res.failed} 条` : "已重新解析并落库",
+      );
+    },
+    onError: (e) => toast.error(toApiError(e).message),
+  });
+
+  function handleParseOne(id: string) {
+    parseOneMut.mutate({ ids: [id] });
   }
 
   // —— 5. 列表查询 ——
@@ -336,7 +376,7 @@ export function StdAddressPage() {
         title="标准地址库"
         description="原始地址标准化与评分管理"
         actions={
-          <MotionButton onClick={actions.openCreate}>
+          <MotionButton onClick={actions.openParse}>
             <Plus className="size-4" />
             新建
           </MotionButton>
@@ -353,7 +393,7 @@ export function StdAddressPage() {
           onViewChange={setView}
           selectedCount={selectedIds.length}
           isStandardizing={batchStandardize.isPending}
-          onCreate={actions.openCreate}
+          onCreate={actions.openParse}
           onImport={() => setImportOpen(true)}
           onExport={excel.handleExport}
           onBatchDelete={actions.requestBatchDelete}
@@ -374,6 +414,7 @@ export function StdAddressPage() {
             callbacks={{
               onView: (row) => actions.openView(row.id),
               onEdit: (row) => actions.openEdit(row.id),
+              onParse: (row) => handleParseOne(row.id),
               onDelete: (row) =>
                 actions.requestDelete({ id: row.id, name: row.rawAddress }),
             }}
@@ -420,6 +461,15 @@ export function StdAddressPage() {
           if (!v) actions.closeDetail();
         }}
         detail={detail}
+        draft={state.previewDraft}
+        onAdmit={handleAdmit}
+        admitPending={admitMut.isPending}
+      />
+
+      <StdAddressParseDialog
+        open={state.parseOpen}
+        onOpenChange={actions.closeParse}
+        onParsed={actions.openPreview}
       />
 
       <StdAddressImportDialog

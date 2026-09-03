@@ -12,7 +12,7 @@ import {
   STD_ADDRESS_FIELD_KEYS,
   type StdAddressFieldKey,
 } from "@/lib/validators/std-address";
-import { Prisma } from "../../../../generated/prisma/client";
+import type { Prisma } from "../../../../generated/prisma/client";
 
 /** 可排序字段白名单(与表格表头打开的服务端排序对应) */
 const stdAddressSortFields = [

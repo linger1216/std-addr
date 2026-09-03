@@ -13,6 +13,7 @@ function makeNode(overrides: Partial<RegionTreeNode> & { code: string }): Region
     name: overrides.code,
     level: 1,
     type: null,
+    alias: null,
     parentCode: null,
     fullName: overrides.code,
     sortOrder: 0,
@@ -54,11 +55,12 @@ describe("toForm / toSubmit(区划表单映射)", () => {
     });
   });
 
-  it("提交值:空串 parentCode/type → undefined,sortOrder 转数字", () => {
+  it("提交值:空串 parentCode/type → undefined,sortOrder 转数字,别名序列化为 JSON 文本", () => {
     const v = toSubmit({
       name: " 浦江镇 ",
       code: " 310112114 ",
       type: " ",
+      alias: [{ value: "旧名" }, { value: " 俗称 " }, { value: "" }],
       parentCode: "",
       sortOrder: "5",
       status: 1,
@@ -67,6 +69,8 @@ describe("toForm / toSubmit(区划表单映射)", () => {
       name: "浦江镇",
       code: "310112114",
       type: undefined,
+      // 去空 + 去首尾空格后序列化成数组 JSON
+      alias: JSON.stringify(["旧名", "俗称"]),
       parentCode: undefined,
       sortOrder: 5,
       status: 1,
@@ -74,10 +78,10 @@ describe("toForm / toSubmit(区划表单映射)", () => {
   });
 
   it("schema:名称/编码必填,排序只收数字", () => {
-    expect(regionFormSchema.safeParse({ name: "", code: "x", status: 1 }).success).toBe(false);
-    expect(regionFormSchema.safeParse({ name: "x", code: "", status: 1 }).success).toBe(false);
-    expect(regionFormSchema.safeParse({ name: "x", code: "x", sortOrder: "12a", status: 1 }).success).toBe(false);
-    expect(regionFormSchema.safeParse({ name: "x", code: "x", sortOrder: "12", status: 0 }).success).toBe(true);
+    expect(regionFormSchema.safeParse({ name: "", code: "x", alias: [], status: 1 }).success).toBe(false);
+    expect(regionFormSchema.safeParse({ name: "x", code: "", alias: [], status: 1 }).success).toBe(false);
+    expect(regionFormSchema.safeParse({ name: "x", code: "x", alias: [], sortOrder: "12a", status: 1 }).success).toBe(false);
+    expect(regionFormSchema.safeParse({ name: "x", code: "x", alias: [], sortOrder: "12", status: 0 }).success).toBe(true);
   });
 });
 

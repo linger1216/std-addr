@@ -3,13 +3,15 @@ import { describe, expect, it } from "vitest";
 import { mapFieldsToPersist } from "./persist";
 
 describe("mapFieldsToPersist 标准化字段 → 表列名", () => {
-  it("road_number 已归一为 number → 写 roadNumber 列", () => {
+  it("road_number 沿用 NER 原生键 → 写 roadNumber 列(不归一为 number)", () => {
     const out = mapFieldsToPersist({
       road: "七莘路",
-      number: "38号",
+      road_number: "38号",
     });
     expect(out.roadNumber).toBe("38号");
     expect(out.road).toBe("七莘路");
+    // 不再产生 number 中间键
+    expect((out as Record<string, unknown>).number).toBeUndefined();
   });
 
   it("农村组号 group → 写 groupField 列(group 是 MySQL 关键字)", () => {
@@ -35,7 +37,7 @@ describe("mapFieldsToPersist 标准化字段 → 表列名", () => {
     expect(out.district).toBeNull();
     expect(out.roadNumber).toBeNull();
     expect(out.groupField).toBeNull();
-    expect(Object.entries(out)).toHaveLength(27);
+    expect(Object.entries(out)).toHaveLength(26);
   });
 
   it("值去除首尾空白后写库", () => {

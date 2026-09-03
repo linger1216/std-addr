@@ -16,7 +16,6 @@ export interface StdFields {
   district?: string;
   street?: string;
   town?: string;
-  township?: string;
   community?: string;
   village?: string;
   subarea?: string;
@@ -25,7 +24,6 @@ export interface StdFields {
   lane?: string;
   alley?: string;
   sub_lane?: string;
-  number?: string; // 路号(旧算法规格:number)
   building?: string;
   unit?: string;
   team?: string;
@@ -36,6 +34,8 @@ export interface StdFields {
   other?: string;
   poi?: string;
   /** 居委(旧算法字段,评分用) */
+  region?: string;
+  /** 居民委员会/村民委员会(level2 区划,流水线内部字段,无 DB 列) */
   neighborhood?: string;
   /** NER 27 要素补充字段 */
   /** 路号(NER 原生键;流程内归一为 number) */
@@ -85,11 +85,11 @@ export function buildStdAddress(fields: StdFields): string {
   if (fields.lane) roadParts.push(`${fields.lane.replace(/弄$/, "")}弄`);
   if (fields.alley) roadParts.push(`${fields.alley.replace(/巷$/, "")}巷`);
   if (fields.sub_lane) roadParts.push(fields.sub_lane.includes("支弄") ? fields.sub_lane : `${fields.sub_lane}支弄`);
-  if (fields.number) roadParts.push(`${fields.number.replace(/号$/, "")}号`);
+  if (fields.road_number) roadParts.push(`${fields.road_number.replace(/号$/, "")}号`);
 
   if (roadParts.length > 0 && fields.road) parts.push(roadParts.join(""));
 
-  const hasLaneOrNumber = Boolean(firstNonEmpty(fields.lane, fields.number));
+  const hasLaneOrNumber = Boolean(firstNonEmpty(fields.lane, fields.road_number));
   if (!hasLaneOrNumber) {
     const extra = firstNonEmpty(fields.community, fields.subarea, fields.poi);
     if (extra) parts.push(extra);

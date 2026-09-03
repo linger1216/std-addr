@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Prisma } from "../../../../generated/prisma/client";
+import { Prisma, type PrismaClient } from "../../../../generated/prisma/client";
 
 import {
   adminProcedure,
@@ -65,6 +65,104 @@ type SubareaWithRegion = Prisma.SubareaGetPayload<{
   };
 }>;
 
+/**
+ * 子区域关联的实体类型:entity_id 实际存的是 小区(community)/村(village)/POI 的 ID。
+ * (road 暂不纳入:road 表无子区域挂载入口,子区域管理里不出现在下拉)
+ */
+export const SUBAREA_ENTITY_TYPES = ["community", "village", "poi"] as const;
+export type SubareaEntityType = (typeof SUBAREA_ENTITY_TYPES)[number];
+
+/** 实体类型 → 中文(表格/详情展示) */
+export const SUBAREA_ENTITY_LABELS: Record<SubareaEntityType, string> = {
+  community: "小区",
+  village: "村",
+  poi: "POI",
+};
+
+type DbForEntity = Pick<
+  PrismaClient,
+  "community" | "village" | "poi"
+>;
+
+/** 解析一串子区域的 关联实体名(按类型分组批量查,减少 N+1) */
+async function resolveEntityNames(
+  db: DbForEntity,
+  rows: Array<{ entityType: string | null; entityId: string | null }>,
+): Promise<Map<string, string | null>> {
+  const byType = new Map<SubareaEntityType, Set<string>>();
+  for (const r of rows) {
+    if (!r.entityType || !r.entityId) continue;
+    if (!(SUBAREA_ENTITY_TYPES as readonly string[]).includes(r.entityType)) {
+      continue;
+    }
+    const t = r.entityType as SubareaEntityType;
+    const ids = byType.get(t) ?? new Set<string>();
+    ids.add(r.entityId);
+    byType.set(t, ids);
+  }
+
+  const nameById = new Map<string, string | null>();
+  const queries: Promise<unknown>[] = [];
+  for (const type of SUBAREA_ENTITY_TYPES) {
+    const ids = byType.get(type);
+    if (!ids || ids.size === 0) continue;
+    const list = [...ids];
+    const q =
+      type === "community"
+        ? db.community.findMany({
+            where: { id: { in: list } },
+            select: { id: true, name: true },
+          })
+        : type === "village"
+          ? db.village.findMany({
+              where: { id: { in: list } },
+              select: { id: true, name: true },
+            })
+          : db.poi.findMany({
+              where: { id: { in: list } },
+              select: { id: true, name: true },
+            });
+    queries.push(
+      q.then((rowsFound) => {
+        for (const row of rowsFound) {
+          nameById.set(`${type}:${row.id}`, row.name);
+        }
+      }),
+    );
+  }
+  await Promise.all(queries);
+  return nameById;
+}
+
+/** entityType/entityId → 单条实体名(供 getById 返回展示) */
+async function resolveEntityName(
+  db: DbForEntity,
+  entityType: string | null | undefined,
+  entityId: string | null | undefined,
+): Promise<string | null> {
+  if (!entityType || !entityId) return null;
+  if (!(SUBAREA_ENTITY_TYPES as readonly string[]).includes(entityType)) {
+    return null;
+  }
+  const type = entityType as SubareaEntityType;
+  const row =
+    type === "community"
+      ? await db.community.findUnique({
+          where: { id: entityId },
+          select: { name: true },
+        })
+      : type === "village"
+        ? await db.village.findUnique({
+            where: { id: entityId },
+            select: { name: true },
+          })
+        : await db.poi.findUnique({
+            where: { id: entityId },
+            select: { name: true },
+          });
+  return row?.name ?? null;
+}
+
 const subareaSortFields = [
   "name",
   "alias",
@@ -124,6 +222,14 @@ function buildOrderBy(
   return orderBy;
 }
 
+/** 实体类型/ID 归一:空白 → null(前端"未指定"语义);undefined 保持不动 */
+function toEntityOrNull(v: string | null | undefined): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const s = v.trim();
+  return s === "" ? null : s;
+}
+
 export const subareaRouter = createTRPCRouter({
   /** 分页 + 搜索 + 状态/区域 筛选 + 排序 */
   list: adminProcedure
@@ -156,6 +262,8 @@ export const subareaRouter = createTRPCRouter({
         }),
       ]);
 
+      const entityNameById = await resolveEntityNames(ctx.db, rows);
+
       const items = rows.map((row: SubareaWithRegion) => ({
         id: row.id,
         name: row.name,
@@ -164,6 +272,10 @@ export const subareaRouter = createTRPCRouter({
         address: row.address,
         entityType: row.entityType,
         entityId: row.entityId,
+        entityName:
+          row.entityType && row.entityId
+            ? (entityNameById.get(`${row.entityType}:${row.entityId}`) ?? null)
+            : null,
         property: row.property,
         regionName: row.region?.name ?? null,
         status: row.status,
@@ -197,11 +309,33 @@ export const subareaRouter = createTRPCRouter({
     }),
   ),
 
-  /** 按 id 获取单条(含 region) */
+  /** 关联实体候选(id + name),按实体类型返回;entity_id 存的是这些表的主键 */
+  entityOptions: adminProcedure
+    .input(z.object({ type: z.enum(SUBAREA_ENTITY_TYPES) }))
+    .query(async ({ ctx, input }) => {
+      if (input.type === "community") {
+        return ctx.db.community.findMany({
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        });
+      }
+      if (input.type === "village") {
+        return ctx.db.village.findMany({
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        });
+      }
+      return ctx.db.poi.findMany({
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+    }),
+
+  /** 按 id 获取单条(含 region + 关联实体名) */
   getById: adminProcedure
     .input(z.object({ id: z.string() }))
-    .query(({ ctx, input }) =>
-      ctx.db.subarea.findUnique({
+    .query(async ({ ctx, input }) => {
+      const row = await ctx.db.subarea.findUnique({
         where: { id: input.id },
         select: {
           id: true,
@@ -217,8 +351,15 @@ export const subareaRouter = createTRPCRouter({
           updatedAt: true,
           region: { select: { id: true, name: true } },
         },
-      }),
-    ),
+      });
+      if (!row) return null;
+      const entityName = await resolveEntityName(
+        ctx.db,
+        row.entityType,
+        row.entityId,
+      );
+      return { ...row, entityName };
+    }),
 
   create: adminProcedure
     .input(subareaCreateInput)
@@ -228,8 +369,8 @@ export const subareaRouter = createTRPCRouter({
           name: input.name,
           alias: toNullableAlias(input.alias),
           regionId: toRegionIdOrNull(input.regionId),
-          entityType: input.entityType ?? null,
-          entityId: input.entityId ?? null,
+          entityType: toEntityOrNull(input.entityType) ?? null,
+          entityId: toEntityOrNull(input.entityId) ?? null,
           address: toPrismaJson(input.address) ?? Prisma.JsonNull,
           property: toPrismaJson(input.property) ?? Prisma.JsonNull,
           status: input.status,
@@ -247,8 +388,10 @@ export const subareaRouter = createTRPCRouter({
       if (input.regionId !== undefined) data.regionId = input.regionId || null;
       const address = toPrismaJson(input.address);
       if (address !== undefined) data.address = address;
-      if (input.entityType !== undefined) data.entityType = input.entityType ?? null;
-      if (input.entityId !== undefined) data.entityId = input.entityId ?? null;
+      if (input.entityType !== undefined)
+        data.entityType = toEntityOrNull(input.entityType) ?? null;
+      if (input.entityId !== undefined)
+        data.entityId = toEntityOrNull(input.entityId) ?? null;
       const property = toPrismaJson(input.property);
       if (property !== undefined) data.property = property;
       if (input.status !== undefined) data.status = input.status;
@@ -289,18 +432,31 @@ export const subareaRouter = createTRPCRouter({
           name: true,
           alias: true,
           regionId: true,
+          entityType: true,
+          entityId: true,
+          address: true,
+          property: true,
           status: true,
           createdAt: true,
           region: { select: { name: true } },
         },
         orderBy: buildOrderBy(input.sort),
       });
+      const entityNameById = await resolveEntityNames(ctx.db, rows);
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
         alias: row.alias,
         regionId: row.regionId,
         regionName: row.region?.name ?? null,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        entityName:
+          row.entityType && row.entityId
+            ? (entityNameById.get(`${row.entityType}:${row.entityId}`) ?? null)
+            : null,
+        address: row.address,
+        property: row.property,
         status: row.status,
         createdAt: row.createdAt,
       }));
@@ -325,8 +481,8 @@ export const subareaRouter = createTRPCRouter({
               name: row.name,
               alias: toNullableAlias(row.alias),
               regionId: toRegionIdOrNull(row.regionId),
-              entityType: row.entityType ?? null,
-              entityId: row.entityId ?? null,
+              entityType: toEntityOrNull(row.entityType) ?? null,
+              entityId: toEntityOrNull(row.entityId) ?? null,
               status: row.status ?? 1,
               createdAt: new Date(),
             },

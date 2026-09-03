@@ -21,6 +21,7 @@ function makeNode(
     name,
     level: 1,
     type: null,
+    alias: null,
     parentCode: null,
     fullName: name,
     sortOrder: 0,

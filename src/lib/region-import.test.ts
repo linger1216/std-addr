@@ -309,6 +309,52 @@ describe("flattenRegionJson(region.json → regions 行)", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.type).toBe("街道");
   });
+
+  it("region.json 别名字段:字符串 / 数组 / JSON 字符串 均归一为多值数组", () => {
+    const data = [
+      node("闵行区", {
+        childList: [
+          node("浦江镇", {
+            addressStandardCode: "310112114",
+            // 字符串形态:单值别称
+            alias: "江镇",
+            childList: [
+              // 数组形态:多值别称
+              node("聚缘居民委员会", {
+                addressStandardCode: "310112114021",
+                alias: ["聚缘居委", "聚缘小区"],
+              }),
+              // JSON 字符串形态:带分隔的别名串
+              node("杜行居民委员会", {
+                addressStandardCode: "310112114002",
+                alias: '["杜行居委","杜巷"]',
+              }),
+            ],
+          }),
+        ],
+      }),
+    ];
+    const { items } = flattenRegionJson(data);
+    const byCode = new Map(items.map((i) => [i.code, i]));
+    expect(byCode.get("310112114")?.alias).toEqual(["江镇"]);
+    expect(byCode.get("310112114021")?.alias).toEqual(["聚缘居委", "聚缘小区"]);
+    expect(byCode.get("310112114002")?.alias).toEqual(["杜行居委", "杜巷"]);
+  });
+
+  it("region.json 别名缺省 → 空数组(导入后不报错)", () => {
+    const data = [
+      node("浦江镇", {
+        addressStandardCode: "310112114",
+        // 不传 alias
+        childList: [
+          node("聚缘居民委员会", { addressStandardCode: "310112114021" }),
+        ],
+      }),
+    ];
+    const { items } = flattenRegionJson(data);
+    expect(items[0]?.alias).toEqual([]);
+    expect(items[1]?.alias).toEqual([]);
+  });
 });
 
 describe("inferRegionType(名称 → type)", () => {

@@ -33,6 +33,19 @@ describe("toForm(详情/编辑初值 → 表单值)", () => {
     expect(f.address).toEqual([{ value: "A1" }, { value: "A2" }, { value: "A3" }]);
   });
 
+  it("关联实体(类型+id)落到表单初值;缺省为空串", () => {
+    const f = toForm(
+      makeDetail({ entityType: "community", entityId: "recom-1" }),
+    );
+    expect(f.entityType).toBe("community");
+    expect(f.entityId).toBe("recom-1");
+    // 老数据无 entity 字段 → 未关联
+    const old = toForm(makeDetail({ entityType: null, entityId: null }));
+    expect(old.entityType).toBe("");
+    expect(old.entityId).toBe("");
+    expect(toForm(null).entityType).toBe("");
+  });
+
   it("空地址 → 空条目列表", () => {
     const f = toForm(makeDetail({ address: null }));
     expect(f.address).toEqual([]);
@@ -99,6 +112,8 @@ describe("toSubmit(表单值 → 提交值)", () => {
       name: "新子区域",
       alias: [],
       regionId: "",
+      entityType: "",
+      entityId: "",
       status: 1,
       address: [{ value: "" }, { value: "   " }, { value: "有效" }],
       property: [],
@@ -119,6 +134,36 @@ describe("toSubmit(表单值 → 提交值)", () => {
     expect(empty.alias).toBe("[]");
     expect(empty.address).toBe("[]");
     expect(empty.property).toBe('{}');
+  });
+
+  it("关联实体(trim 后成对提交;空类型/空 id 按空串 = 未关联)", () => {
+    const linked = toSubmit({
+      id: "c-1",
+      name: "子区域",
+      alias: [],
+      regionId: "",
+      entityType: " community ",
+      entityId: " recom-9 ",
+      status: 1,
+      address: [],
+      property: [],
+    });
+    expect(linked.entityType).toBe("community");
+    expect(linked.entityId).toBe("recom-9");
+
+    const none = toSubmit({
+      id: null,
+      name: "子区域",
+      alias: [],
+      regionId: "",
+      entityType: "",
+      entityId: "",
+      status: 1,
+      address: [],
+      property: [],
+    });
+    expect(none.entityType).toBe("");
+    expect(none.entityId).toBe("");
   });
 });
 

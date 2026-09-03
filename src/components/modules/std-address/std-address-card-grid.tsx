@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Eye, Pencil, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, Pencil, RefreshCw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,8 @@ export function StdAddressCardGrid({
     onView?: (r: StdAddressRow) => void;
     onEdit?: (r: StdAddressRow) => void;
     onDelete?: (r: StdAddressRow) => void;
+    /** 重新解析并落库(不带 debug,直接赋值) */
+    onParse?: (r: StdAddressRow) => void;
   };
 }) {
   const allSelected = rows.length > 0 && rows.every((r) => rowSelection[r.id]);
@@ -147,6 +149,8 @@ function StdAddressCard({
     onView?: (r: StdAddressRow) => void;
     onEdit?: (r: StdAddressRow) => void;
     onDelete?: (r: StdAddressRow) => void;
+    /** 重新解析并落库(不带 debug,直接赋值) */
+    onParse?: (r: StdAddressRow) => void;
   };
 }) {
   // 仅展示有值的地址要素(标签:值)
@@ -212,6 +216,15 @@ function StdAddressCard({
           {formatShortDate(row.createdAt)}
         </span>
         <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => callbacks.onParse?.(row)}
+            className="h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCw className="size-3.5" />
+            解析
+          </Button>
           <Button
             variant="ghost"
             size="sm"

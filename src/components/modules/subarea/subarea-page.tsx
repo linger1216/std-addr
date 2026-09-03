@@ -180,25 +180,27 @@ export function SubareaPage() {
     if (state.editingId && editingData) actions.openFormWhenReady();
   }, [state.editingId, editingData, actions]);
 
-  // —— 8. 提交表单:create / update ——
+  // —— 8. 提交表单:create / update(全字段:entity/address/property 都要带)——
   function handleSubmit(values: SubareaFormValues) {
+    // 关联实体:类型与 id 成对;任一为空 = 清空(路由层归 null)
+    const rawType = values.entityType?.trim() ?? "";
+    const rawId = values.entityId?.trim() ?? "";
+    const entityType = rawType !== "" && rawId !== "" ? rawType : "";
+    const entityId = entityType === "" ? "" : rawId;
+    const payload = {
+      name: values.name,
+      alias: values.alias ?? undefined,
+      regionId: values.regionId ?? undefined,
+      status: values.status,
+      entityType,
+      entityId,
+      address: parseOptionalJson("address", values.address),
+      property: parseOptionalJson("property", values.property),
+    };
     if (values.id) {
-      mut.update.mutate({
-        id: values.id,
-        name: values.name,
-        alias: values.alias ?? undefined,
-        regionId: values.regionId ?? undefined,
-        status: values.status,
-        address: parseOptionalJson("address", values.address),
-      });
+      mut.update.mutate({ id: values.id, ...payload });
     } else {
-      mut.create.mutate({
-        name: values.name,
-        alias: values.alias ?? undefined,
-        regionId: values.regionId ?? undefined,
-        status: values.status,
-        address: parseOptionalJson("address", values.address),
-      });
+      mut.create.mutate(payload);
     }
   }
 

@@ -165,6 +165,11 @@ function TreeNode({
             )}
           />
           <span className="truncate">{node.name}</span>
+          {Array.isArray(node.alias) && node.alias.length > 0 && (
+            <span className="shrink-0 truncate text-[11px] text-muted-foreground/80">
+              ({(node.alias as string[]).join(" / ")})
+            </span>
+          )}
           {hasChildren && (
             <Badge
               variant="outline"

@@ -22,6 +22,8 @@
  * 模块按 addressStandardCode(= code)关联区划的链路不受影响。
  */
 
+import { parseAliasEntries } from "@/lib/alias-entries";
+
 /** region.json data 里的单个节点(与后端 import input 共用的类型) */
 export type RegionJsonOrgNode = {
   orgCode: string;
@@ -30,6 +32,8 @@ export type RegionJsonOrgNode = {
   areaCode: string | null;
   /** 行政区划标准编码;空串/缺省 = 非区划(机构)节点 */
   addressStandardCode: string | null;
+  /** 别名 / 别称(导入可选;字符串 / 数组 / JSON 字符串均可,路由层归一) */
+  alias?: unknown;
   childList?: RegionJsonOrgNode[];
 };
 
@@ -117,6 +121,8 @@ export type RegionImportItem = {
   sortOrder: number;
   /** 按名称推断的 type;推断不出 = null(由人工/编辑器补) */
   type: RegionType | null;
+  /** 别名 / 别称(已归一为多值字符串数组;空 = 无) */
+  alias: string[];
 };
 
 /** 导入统计:每类被跳过的节点数 + 警告 */
@@ -202,6 +208,8 @@ export function flattenRegionJson(
           // 占位,最后统一按 parentCode 分组回填
           sortOrder: keptSiblings,
           type: inferRegionType(trimmedName),
+          // 别名归一:任意可解析形态(字符串/数组/JSON 字符串)→ 多值数组
+          alias: parseAliasEntries(node.alias),
         });
         keptSiblings++;
         codeStack.push(code);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 
@@ -20,6 +20,7 @@ import { SearchSelect } from "@/components/ui/search-select";
 import { TagInput } from "@/components/ui/tag-input";
 import type { RegionOption } from "./subarea-toolbar";
 import type { RouterOutputs } from "@/trpc/react";
+import { api } from "@/trpc/react";
 // 表单的纯数据映射(toForm/toSubmit/schema)独立成模块,便于单元测试
 import {
   formSchema,
@@ -86,6 +87,32 @@ export function SubareaFormDialog({
   }, [open, initial, reset]);
 
   const isEdit = initial != null && "createdAt" in initial;
+
+  // 关联实体:entityType 变化后加载对应实体列表(entity_id = 小区/村/POI 主键)
+  const entityType = useWatch({ control, name: "entityType" }) ?? "";
+  const entityId = useWatch({ control, name: "entityId" }) ?? "";
+
+  const entityOptionsQuery = api.subarea.entityOptions.useQuery(
+    { type: entityType as "community" | "village" | "poi" },
+    { enabled: open && entityType !== "" },
+  );
+  const entityOptions =
+    entityOptionsQuery.data?.map((e) => ({ value: e.id, label: e.name })) ?? [];
+  // 真实列表优先命中(名称);仅当选中项不在列表中(加载中/实体已删)才追加兜底,
+  // 兜底标签优先用详情解析出的实体名,没有才退回 id —— 避免永远显示 id
+  const selectedInList =
+    entityId !== "" && entityOptions.some((o) => o.value === entityId);
+  const isInitialDetail = initial != null && "createdAt" in initial;
+  const fallbackLabel =
+    isInitialDetail &&
+    initial.entityType === entityType &&
+    initial.entityId === entityId
+      ? (initial.entityName ?? entityId)
+      : entityId;
+  const allEntityOptions =
+    entityId !== "" && !selectedInList
+      ? [...entityOptions, { value: entityId, label: fallbackLabel ?? entityId }]
+      : entityOptions;
 
   function handleValid(values: FormSchema) {
     onSubmit(toSubmit(values));
@@ -159,6 +186,59 @@ export function SubareaFormDialog({
                       { value: "0", label: "禁用" },
                     ]}
                     placeholder="状态"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="关联实体类型" hint="子区域挂在小区/村/POI 下">
+              <Controller
+                control={control}
+                name="entityType"
+                render={({ field }) => (
+                  <SearchSelect
+                    value={field.value ?? ""}
+                    onValueChange={(v) => {
+                      // 类型变化 → 清空旧的 entityId,避免跨表错挂
+                      field.onChange(v);
+                      setValue("entityId", "");
+                    }}
+                    options={[
+                      { value: "", label: "未关联" },
+                      { value: "community", label: "小区" },
+                      { value: "village", label: "村" },
+                      { value: "poi", label: "POI" },
+                    ]}
+                    placeholder="选择实体类型"
+                    triggerClassName="h-9 w-full"
+                    inputClassName="h-8"
+                  />
+                )}
+              />
+            </Field>
+            <Field
+              label="关联实体"
+              hint="entity_id 即所选 小区/村/POI 的记录 ID"
+            >
+              <Controller
+                control={control}
+                name="entityId"
+                render={({ field }) => (
+                  <SearchSelect
+                    value={field.value ?? ""}
+                    onValueChange={field.onChange}
+                    options={[
+                      { value: "", label: "未关联" },
+                      ...allEntityOptions,
+                    ]}
+                    placeholder={
+                      entityType === "" ? "请先选择实体类型" : "搜索并选择"
+                    }
+                    disabled={entityType === ""}
                     triggerClassName="h-9 w-full"
                     inputClassName="h-8"
                   />

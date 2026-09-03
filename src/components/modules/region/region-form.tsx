@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TagInput } from "@/components/ui/tag-input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -169,6 +170,14 @@ export function RegionEditPanel({
           <ChevronRight className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0 break-all">{node.fullName ?? node.name}</span>
         </div>
+        {Array.isArray(node.alias) && node.alias.length > 0 && (
+          <div className="mt-1 flex items-start gap-1.5 text-[12.5px] text-muted-foreground">
+            <span className="shrink-0 font-medium">别名</span>
+            <span className="min-w-0 break-all">
+              {(node.alias as string[]).join(" / ")}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 表单区:内容自适应高度,不撑满导致下方空白 */}
@@ -299,6 +308,21 @@ function RegionFields({
                   triggerClassName="h-9 w-full"
                   inputClassName="h-8"
                 />
+              )}
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="别名"
+            hint="曾用名 / 别称,输入后回车添加;空列表保存后别名清空"
+          >
+            <Controller
+              control={control}
+              name="alias"
+              render={({ field }) => (
+                <TagInput value={field.value} onChange={field.onChange} max={20} />
               )}
             />
           </Field>

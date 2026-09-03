@@ -33,16 +33,22 @@ const fetchMock = vi.fn<typeof fetch>();
 
 /* ==================== 主库真实区划 fixture ==================== */
 
-type RegionRow = { name: string; level: number; parentCode: string | null };
+type RegionRow = {
+  name: string;
+  level: number;
+  parentCode: string | null;
+  /** 别名数组(可选;inferAdmin 别名兜底锚点用) */
+  alias?: string[];
+};
 
 /** key = region.id 或 region.code(查询 OR[{id},{code}] / {code} 兼容) */
 const REGIONS: Record<string, RegionRow> = {
   // level1 街镇(真实)
   "310112102": { name: "七宝镇", level: 1, parentCode: null },
   "310112103": { name: "颛桥镇", level: 1, parentCode: null },
-  "310112106": { name: "华漕镇", level: 1, parentCode: null },
+  "310112106": { name: "华漕镇", level: 1, parentCode: null, alias: ["华漕"] },
   "310112114": { name: "浦江镇", level: 1, parentCode: null },
-  "310112502": { name: "浦锦街道", level: 1, parentCode: null },
+  "310112502": { name: "浦锦街道", level: 1, parentCode: null, alias: ["浦锦"] },
   "310112006": { name: "古美路街道", level: 1, parentCode: null },
   "310112112": { name: "马桥镇", level: 1, parentCode: null },
   // level2 居委(真实,含村民委员会)
@@ -62,6 +68,14 @@ function mockRegionTree() {
     const or = where?.OR as Array<Record<string, string>> | undefined;
     const q = or ? (or[0]?.id ?? or[1]?.code) : (where?.code ?? where?.name);
     if (q && REGIONS[q]) return { id: q, code: q, ...REGIONS[q] } as never;
+    // 别名兜底锚点查询:region.alias(JSON 数组)array_contains 精确命中
+    const aliasQ = where?.alias?.array_contains as string | undefined;
+    if (aliasQ) {
+      const hit = Object.entries(REGIONS).find(([, r]) =>
+        r.alias?.includes(aliasQ),
+      );
+      if (hit) return { id: hit[0], code: hit[0], ...hit[1] } as never;
+    }
     // name 查询(inferAdmin 锚点):按名称反查
     const hit = Object.entries(REGIONS).find(([, r]) => r.name === q);
     if (hit) return { id: hit[0], code: hit[0], ...hit[1] } as never;
@@ -201,8 +215,8 @@ const CASES: StdCase[] = [
     raw: `马桥镇S32小区10号402室`,
     ml: { town: "马桥镇", community: "S32", building: "10号", room: "402室" },
     db: { community: [{ id: "c000001a03e838ba174515e55", name: "S32小区", alias: ["S32"], regionId: "1374" }] },
-    // 名称匹配成功后 community 字段保持 ML 值(别名"S32"),不替换为实体名
-    expected: { stdAddress: "马桥镇S3210号402室", fieldsExist: ["community"] },
+    // 别名命中后 community 字段替换为库内规范名(S32 → S32小区)
+    expected: { stdAddress: "马桥镇S32小区10号402室", fieldsExist: ["community"] },
   },
   {
     id: "COM-A4", category: "小区匹配", description: "小区匹配无楼栋室号",
@@ -236,7 +250,7 @@ const CASES: StdCase[] = [
   {
     id: "POI-A3", category: "POI匹配", description: "纯路号无 POI 关联",
     raw: `颛桥镇新镇路256号`,
-    ml: { town: Q, road: "新镇路", number: "256号" },
+    ml: { town: Q, road: "新镇路", road_number: "256号" },
     expected: { stdAddress: `颛桥镇新镇路256号`, score: 6, fieldsNotExist: ["poi"] },
   },
 
@@ -344,7 +358,7 @@ const CASES: StdCase[] = [
   {
     id: "RN-P1", category: "路号→POI", description: "路+号 → 无 ref 表,不填充 POI(降级)",
     raw: `浦江镇永跃路260号`,
-    ml: { town: P, road: "永跃路", number: "260号" },
+    ml: { town: P, road: "永跃路", road_number: "260号" },
     expected: { stdAddress: `浦江镇永跃路260号`, fieldsNotExist: ["poi"] },
   },
   {
@@ -356,7 +370,7 @@ const CASES: StdCase[] = [
   {
     id: "RN-P3", category: "路号→POI", description: "路+号 → 无 POI 关联",
     raw: `颛桥镇新镇路256号`,
-    ml: { town: Q, road: "新镇路", number: "256号" },
+    ml: { town: Q, road: "新镇路", road_number: "256号" },
     expected: { stdAddress: `颛桥镇新镇路256号`, fieldsNotExist: ["poi"] },
   },
 
@@ -479,12 +493,25 @@ const CASES: StdCase[] = [
     db: { community: [{ id: "c000001a03e838ba32cad1aa8", name: "万博家园", regionId: "1254" }] },
     expected: { stdAddress: `华漕镇万博家园10号402室`, fieldsExist: ["town"] },
   },
+  {
+    id: "ADM-A1", category: "行政推断", description: "镇锚点用别名命中(华漕=华漕镇),town 归一到规范名",
+    raw: "华漕金光路199号",
+    ml: { town: "华漕", road: "金光路", road_number: "199号" },
+    // 规范名 "华漕镇" 不含锚点 "华漕" → name 不命中;靠 alias=["华漕"] 命中,行政链填规范名
+    expected: { stdAddress: "华漕镇金光路199号", fieldsExist: ["town"] },
+  },
+  {
+    id: "ADM-A2", category: "行政推断", description: "街道别名命中(浦锦=浦锦街道),street 归一到规范名",
+    raw: "浦锦陈行路233弄",
+    ml: { street: "浦锦", road: "陈行路", lane: "233弄" },
+    expected: { stdAddress: "浦锦街道陈行路233弄", fieldsExist: ["street"] },
+  },
 
   // ============ Q. 无匹配(纯道路) ============
   {
     id: "NOR-A1", category: "无匹配", description: "纯道路地址无实体匹配",
     raw: "闵行区古美路街道古龙路288号102室",
-    ml: { district: "闵行区", street: "古美路街道", road: "古龙路", number: "288号", room: "102室" },
+    ml: { district: "闵行区", street: "古美路街道", road: "古龙路", road_number: "288号", room: "102室" },
     expected: { stdAddress: "闵行区古美路街道古龙路288号102室", score: 7 },
   },
 

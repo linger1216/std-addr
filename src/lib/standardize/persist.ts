@@ -1,9 +1,10 @@
 /**
  * 标准地址库 · 标准化字段 → 数据库可写字段(纯函数,可测)。
  *
- * 旧算法规格的 StdFields(road_number 归一为 number、农村组号叫 group)
- * 与 StdAddress 表列名(subLane/roadNumber/groupField/locationType)存在差异,
- * 写库前必须统一映射,否则 Prisma 会因未知字段抛校验错误(整批失败)。
+ * StdFields 的 NER 原生 key(road_number/sub_lane/group)与 StdAddress 表列名
+ * (roadNumber/subLane/groupField/locationType)存在差异,写库前必须统一映射,
+ * 否则 Prisma 会因未知字段抛校验错误(整批失败)。路号沿用 NER 原生键 road_number。
+ * 乡(township)在入库前已并入 town(统称为 town),故不再单独映射。
  */
 
 import type { StdFields } from "./build";
@@ -15,7 +16,6 @@ const COLUMN_SOURCES: Array<[string, keyof StdFields]> = [
   ["district", "district"],
   ["street", "street"],
   ["town", "town"],
-  ["township", "township"],
   ["community", "community"],
   ["village", "village"],
   ["subarea", "subarea"],
@@ -25,8 +25,8 @@ const COLUMN_SOURCES: Array<[string, keyof StdFields]> = [
   ["alley", "alley"],
   // 表列 sub_lane ← 旧算法 sub_lane
   ["subLane", "sub_lane"],
-  // 表列 road_number ← 旧算法归一后的 number(road_number 已在流水线归并)
-  ["roadNumber", "number"],
+  // 表列 road_number ← NER 原生键 road_number(沿用,不归一为 number)
+  ["roadNumber", "road_number"],
   ["building", "building"],
   ["unit", "unit"],
   ["team", "team"],

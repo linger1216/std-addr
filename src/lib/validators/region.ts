@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { aliasInputSchema } from "@/lib/validators/community";
 import type { RegionJsonOrgNode } from "@/lib/region-import";
 
 /**
@@ -38,6 +39,8 @@ export const regionCreateSchema = z.object({
   parentCode: optionalParentCodeSchema,
   /** 区划类型,如 省/市/区/街道/镇/居(村)委会(可留空) */
   type: z.string().trim().max(50, "类型最长 50 字").nullable().optional(),
+  /** 别名 / 别称(曾用名,多值 JSON;字符串 / 字符串数组 / JSON 字符串均可) */
+  alias: aliasInputSchema,
   sortOrder: z.number().int().min(0).max(9999).default(0),
   status: regionStatusSchema.default(1),
 });
@@ -50,6 +53,7 @@ export const regionUpdateSchema = z
     code: regionCodeSchema.optional(),
     parentCode: optionalParentCodeSchema,
     type: z.string().trim().max(50, "类型最长 50 字").nullable().optional(),
+    alias: aliasInputSchema,
     sortOrder: z.number().int().min(0).max(9999).optional(),
     status: regionStatusSchema.optional(),
   })
@@ -68,6 +72,8 @@ export const regionImportNodeSchema: z.ZodType<RegionJsonOrgNode> = z.lazy(() =>
     orgName: z.string(),
     areaCode: z.string().nullable(),
     addressStandardCode: z.string().nullable(),
+    /** 别名 / 别称(导入可选;任意可解析形态,路由层归一为多值 JSON) */
+    alias: z.unknown().optional(),
     childList: z.array(regionImportNodeSchema).optional(),
   }),
 );

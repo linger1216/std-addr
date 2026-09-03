@@ -7,7 +7,7 @@ describe("buildStdAddress 标准地址拼接", () => {
   it("城市路弄号:行政去重 + 路弄号", () => {
     const s = buildStdAddress({
       province: "上海市", city: "上海市", district: "闵行区",
-      street: "七宝镇", road: "永跃路", lane: "260弄", number: "38号",
+      street: "七宝镇", road: "永跃路", lane: "260弄", road_number: "38号",
       building: "5号", room: "502室",
     });
     // 注:building 末尾带"号"才被 replace(/号$/) 规整;模型输出的 "5号楼" 形态保持旧行为(5号楼号)
@@ -15,7 +15,7 @@ describe("buildStdAddress 标准地址拼接", () => {
   });
 
   it("road 逗号合并:七莘路,沪闵路 → 七莘路沪闵路", () => {
-    expect(buildStdAddress({ road: "七莘路,沪闵路", number: "1号" })).toBe("七莘路沪闵路1号");
+    expect(buildStdAddress({ road: "七莘路,沪闵路", road_number: "1号" })).toBe("七莘路沪闵路1号");
   });
 
   it("无门牌但有社区:路后补地标", () => {
@@ -48,7 +48,7 @@ describe("calcScore 标准评分(0-10)", () => {
   it("城市完整地址:行政+路弄号+楼栋+室号", () => {
     const score = calcScore({
       district: "闵行区", street: "七宝镇", road: "永跃路",
-      lane: "260弄", number: "38号", building: "5号楼", room: "502室",
+      lane: "260弄", road_number: "38号", building: "5号楼", room: "502室",
     });
     // 区县1+街镇2 + 路2+弄2+号2+楼栋1 + 室1 = 11 → cap 10
     expect(score).toBe(10);
@@ -66,7 +66,7 @@ describe("calcScore 标准评分(0-10)", () => {
   it("行政分级:仅区县1;街镇2;居委3", () => {
     expect(calcScore({ district: "闵行区" })).toBe(1);
     expect(calcScore({ district: "闵行区", street: "七宝镇" })).toBe(2);
-    expect(calcScore({ district: "闵行区", neighborhood: "航华居委" })).toBe(3);
+    expect(calcScore({ district: "闵行区", region: "航华居委" })).toBe(3);
   });
 
   it("室号+1 方向+1", () => {
@@ -76,7 +76,7 @@ describe("calcScore 标准评分(0-10)", () => {
   it("上限 10", () => {
     const full = {
       district: "闵行区", street: "七宝镇", road: "永跃路", lane: "260弄",
-      number: "38号", building: "5号楼", room: "502室", direction: "南",
+      road_number: "38号", building: "5号楼", room: "502室", direction: "南",
     };
     expect(calcScore(full)).toBe(10);
   });

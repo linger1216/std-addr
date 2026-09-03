@@ -85,7 +85,7 @@ afterEach(() => {
 
 describe("standardizeService 10 步流水线", () => {
   it("城市路弄号全链路:ML 解析→清洗→拼接→评分,mock ML 无 DB 命中", async () => {
-    mlOk({ road: "永跃路", lane: "260弄", number: "38号", building: "5号", room: "502室" });
+    mlOk({ road: "永跃路", lane: "260弄", road_number: "38号", building: "5号", room: "502室" });
 
     const res = await standardizeService.standardize("永跃路260弄38号502室");
 
@@ -116,7 +116,7 @@ describe("standardizeService 10 步流水线", () => {
   });
 
   it("进程内缓存:同一地址第二次标准化不再调 ML", async () => {
-    mlOk({ road: "永跃路", number: "260号" });
+    mlOk({ road: "永跃路", road_number: "260号" });
     const first = await standardizeService.standardize("永跃路260号");
     expect(first.stdAddress).toBe("永跃路260号");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -136,7 +136,7 @@ describe("standardizeService 10 步流水线", () => {
     const res = await standardizeService.standardize("阳光花园16号701室");
 
     // 行政链:万博家园居民委员会(level2 居委)→ 华漕镇(level1);主库无省市层级
-    expect(res.fields.neighborhood).toBe("万博家园居民委员会");
+    expect(res.fields.region).toBe("万博家园居民委员会");
     expect(res.fields.town).toBe("华漕镇");
     expect(res.fields.city).toBeUndefined();
     expect(res.stdAddress).toBe("华漕镇阳光花园16号701室");
@@ -159,7 +159,7 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.fields.subarea).toBe("壹街区");
     expect(res.fields.community).toBe("瑞和雅苑");
     // 子区域填行政(镇),小区再覆盖(居委+镇)
-    expect(res.fields.neighborhood).toBe("万博家园居民委员会");
+    expect(res.fields.region).toBe("万博家园居民委员会");
     expect(res.fields.town).toBe("华漕镇");
   });
 
@@ -189,7 +189,7 @@ describe("standardizeService 10 步流水线", () => {
   });
 
   it("直辖市行政去重:上海市 省市合并,province 清空", async () => {
-    mlOk({ province: "上海市", city: "上海市", district: "闵行区", road: "永跃路", number: "260号" });
+    mlOk({ province: "上海市", city: "上海市", district: "闵行区", road: "永跃路", road_number: "260号" });
 
     const res = await standardizeService.standardize("上海市上海市闵行区永跃路260号");
 
@@ -207,31 +207,41 @@ describe("standardizeService 10 步流水线", () => {
 });
 
 describe("standardizeService debug trace", () => {
-  it("non-debug 不返回 trace;debug 返回 trace 且步骤名齐全 + log 对齐", async () => {
-    mlOk({ road: "永跃路", number: "260号" });
+  it("non-debug 不返回 trace;debug 返回 trace(分组 + 子步骤)", async () => {
+    mlOk({ road: "永跃路", road_number: "260号" });
 
     const normal = await standardizeService.standardize("永跃路260号");
     expect(normal.trace).toBeUndefined();
-    expect(normal.log).toBeUndefined();
 
     clearStandardizeCache(); // 避免命中上一次调用的缓存,保证走完整流水线
     const res = await standardizeService.standardize("永跃路260号", { debug: true });
     expect(res.trace).toBeDefined();
-    const names = res.trace!.map((s) => s.name);
+    // 顶层 = 阶段分组名
+    const groupNames = res.trace!.map((s) => s.name);
     for (const expected of [
       "预处理",
-      "ML 解析(NER)",
-      "清洗 ML 字段",
-      "中文数字转阿拉伯",
+      "解析",
+      "后清洗",
+      "上下文推断",
+      "收尾",
+    ]) {
+      expect(groupNames).toContain(expected);
+    }
+    // 实际步骤 = 各组下的子步骤
+    const leafNames = res.trace!.flatMap((s) => s.children ?? []).map((s) => s.name);
+    for (const expected of [
+      "清洗",
+      "缓存查找",
+      "模型",
+      "清洗地址要素",
+      "region 反查",
       "行政去重",
       "拼接标准地址",
       "评分",
       "缓存写入",
     ]) {
-      expect(names).toContain(expected);
+      expect(leafNames).toContain(expected);
     }
-    expect(res.log).toBeDefined();
-    expect(res.log!.length).toBe(res.trace!.length);
   });
 
   it("debug 模式 ML 网络失败:降级返回 partial trace(含 fail 步),不抛错", async () => {
@@ -240,8 +250,26 @@ describe("standardizeService debug trace", () => {
     const res = await standardizeService.standardize("永跃路260弄", { debug: true });
     expect(res.stdAddress).toBe(""); // 降级:空字段拼出空结果
     expect(res.trace).toBeDefined();
-    const failStep = res.trace!.find((s) => s.name === "ML 解析(NER)");
-    expect(failStep?.status).toBe("fail");
+    const failStep = res.trace!
+      .flatMap((s) => s.children ?? [])
+      .find((s) => s.name === "模型");
+    expect(failStep?.status).toBe("error");
+  });
+
+  it("debug trace 每个子步骤都带本步执行后的 StdFields 快照", async () => {
+    mlOk({ road: "永跃路", road_number: "260号" });
+
+    const res = await standardizeService.standardize("永跃路260号", { debug: true });
+    const leaves = res.trace!.flatMap((s) => s.children ?? []);
+    // 每个子步骤都由 trace 闭包自动快照 fields(顶层分组仅为容器,无快照)
+    for (const step of leaves) {
+      expect(step.fields).toBeDefined();
+      expect(step.fields).toEqual(expect.any(Object));
+    }
+    // 快照反映步后累积的要素(路号沿用 NER 原生键 road_number)
+    const joined = leaves.find((s) => s.name === "拼接标准地址");
+    expect(joined?.fields?.road).toBe("永跃路");
+    expect(joined?.fields?.road_number).toBe("260号");
   });
 
   it("debug trace 记录 DB 匹配命中(community 行政链填充)", async () => {
@@ -252,9 +280,21 @@ describe("standardizeService debug trace", () => {
     mockRegionTree(regionTree());
 
     const res = await standardizeService.standardize("阳光花园16号701室", { debug: true });
-    const matchStep = res.trace!.find((s) => s.name === "DB 匹配(小区)");
+    const group = res.trace!.find((s) => s.name === "DB 匹配(小区)");
+    expect(group).toBeDefined();
+    const matchStep = group!.children?.find((s) => s.name === "小区匹配");
     expect(matchStep).toBeDefined();
-    expect(matchStep!.status).not.toBe("skip");
-    expect((matchStep!.matched as { name: string }).name).toBe("阳光花园");
+    expect(matchStep!.status).toBe("match");
+    expect(matchStep!.output).toBe("阳光花园");
+    expect(matchStep!.msg).toContain("阳光花园");
+    // 小区主步骤快照:ML 的小区/楼栋要素已就位
+    expect(matchStep!.fields?.community).toBe("阳光花园");
+    expect(matchStep!.fields?.building).toBe("16号");
+    // 子步骤「采用小区自带居委」执行后,快照出现居委(region)+镇(town)
+    const child = group!.children?.find((s) => s.name === "采用小区自带居委");
+    expect(child).toBeDefined();
+    expect(child!.fields?.region).toBe("万博家园居民委员会");
+    expect(child!.fields?.town).toBe("华漕镇");
+    expect(child!.fields?.community).toBe("阳光花园");
   });
 });

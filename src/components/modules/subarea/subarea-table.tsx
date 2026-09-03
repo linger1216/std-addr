@@ -24,6 +24,7 @@ import { type useAppTable, createAppColumnHelper } from "@/lib/table";
 import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
 import { formatShortDate, normalizeAddress } from "@/lib/format";
 import { parseAliasEntries } from "@/lib/alias-entries";
+import { entityTypeLabel } from "./subarea-entity";
 import type { RouterOutputs } from "@/trpc/react";
 
 /** 表格行 = list procedure 的 item 类型(单一事实来源) */
@@ -92,17 +93,26 @@ export function createSubareaColumns() {
       },
     }),
     columnHelper.accessor("entityType", {
-      header: () => <div className="text-center">实体类型</div>,
+      header: () => <div className="text-center">关联实体</div>,
       cell: (info) => {
-        const val = entityTypeLabel(info.getValue());
-        return val ? (
-          <div className="flex justify-center">
-            <Badge className="p-2.5 text-[11px]" variant="outline">
-              {val}
-            </Badge>
+        const row = info.row.original;
+        const type = entityTypeLabel(info.getValue());
+        const name = row.entityName;
+        // 未关联 / 有类型但实体已删(只剩 id)
+        if (!type && !name) {
+          return <div className="text-center text-[12px] text-muted-foreground/50">—</div>;
+        }
+        return (
+          <div className="flex flex-wrap items-center justify-center gap-1">
+            {type && (
+              <Badge className="p-2.5 text-[11px]" variant="outline">
+                {type}
+              </Badge>
+            )}
+            <span className="text-[12px] text-muted-foreground">
+              {name ?? row.entityId ?? ""}
+            </span>
           </div>
-        ) : (
-          <div className="text-center text-[12px] text-muted-foreground/50">—</div>
         );
       },
     }),
@@ -387,19 +397,6 @@ function DataRow({ row, index, columnSizing }: { row: any; index: number; column
 }
 /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
 
-
-/** 实体类型英文 → 中文展示 */
-const ENTITY_TYPE_LABELS: Record<string, string> = {
-  village: "村",
-  community: "小区",
-  poi: "POI",
-  road: "道路",
-};
-
-function entityTypeLabel(v: unknown): string {
-  if (typeof v !== "string" || !v) return "";
-  return ENTITY_TYPE_LABELS[v] ?? v;
-}
 
 /** 属性列:渲染 {key: [值]} 摘要(前 3 个 key,每 key 前 4 值) */
 function PropertyCell({ value }: { value: unknown }) {

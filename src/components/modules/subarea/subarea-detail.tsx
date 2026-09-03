@@ -12,6 +12,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
 import { formatDateTime, parseAddressEntries } from "@/lib/format";
 import { parseAliasEntries } from "@/lib/alias-entries";
+import { entityTypeLabel } from "./subarea-entity";
 import type { SubareaDetail } from "./subarea-form";
 
 /** 详情字段 = getById 输出(单一事实来源:subarea-form.tsx,已含 region) */
@@ -55,7 +56,17 @@ export function SubareaDetailDialog({
               <AliasEntries value={detail.alias} />
             </Row>
             <Row label="所属区划">{orEmpty(detail.region?.name)}</Row>
-            <Row label="实体类型">{orEmpty(detail.entityType)}</Row>
+            <Row label="关联实体">
+              {detail.entityType || detail.entityName ? (
+                <EntityRef
+                  entityType={detail.entityType}
+                  entityName={detail.entityName}
+                  entityId={detail.entityId}
+                />
+              ) : (
+                "—"
+              )}
+            </Row>
             <Row label="属性">
               {detail.property ? <PropertyText value={detail.property} /> : "—"}
             </Row>
@@ -111,6 +122,27 @@ function AddressEntries({ value }: { value: unknown }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** 关联实体展示:类型徽标 + 名称;实体已删只剩 id 时降级显示 id */
+function EntityRef({
+  entityType,
+  entityName,
+  entityId,
+}: {
+  entityType: string | null;
+  entityName: string | null;
+  entityId: string | null;
+}) {
+  const label = entityTypeLabel(entityType);
+  const text = entityName ?? (entityId ? `(${entityId})` : "");
+  if (!label && !text) return null;
+  return (
+    <span>
+      {label && <span className="mr-1 text-muted-foreground">[{label}]</span>}
+      {text}
+    </span>
   );
 }
 

@@ -15,7 +15,7 @@ export function calcScore(fields: StdFields): number {
   let total = 0;
 
   // 1. 行政划分评分(居委=3,街镇=2,区县=1)
-  if (fields.neighborhood) {
+  if (fields.region) {
     total += 3;
   } else if (firstNonEmpty(fields.street, fields.town)) {
     total += 2;
@@ -25,14 +25,14 @@ export function calcScore(fields: StdFields): number {
 
   // 2. 地址类型分支
   const hasRoad = Boolean(
-    firstNonEmpty(fields.road, fields.lane, fields.number),
+    firstNonEmpty(fields.road, fields.lane, fields.road_number),
   );
   const hasRural = !!fields.village;
 
   if (hasRoad) {
     if (fields.road) total += 2; // 路名
     if (fields.lane) total += 2; // 弄号
-    if (fields.number) total += 2; // 路号
+    if (fields.road_number) total += 2; // 路号
     if (fields.building) total += 1; // 楼栋
   } else if (!hasRoad && !hasRural && (fields.community || fields.poi || fields.subarea)) {
     if (fields.community || fields.poi || fields.subarea) total += 4;
@@ -54,8 +54,8 @@ export function calcScore(fields: StdFields): number {
 export function formatScoreDetail(score: number, fields: StdFields): string[] {
   const lines: string[] = [];
 
-  if (fields.neighborhood) {
-    lines.push(`居委：${fields.neighborhood} (+3)`);
+  if (fields.region) {
+    lines.push(`居委：${fields.region} (+3)`);
   } else if (firstNonEmpty(fields.street, fields.town)) {
     lines.push(`街镇：${firstNonEmpty(fields.street, fields.town)} (+2)`);
   } else if (fields.district) {
@@ -65,14 +65,14 @@ export function formatScoreDetail(score: number, fields: StdFields): string[] {
   }
 
   const hasRoad = Boolean(
-    firstNonEmpty(fields.road, fields.lane, fields.number),
+    firstNonEmpty(fields.road, fields.lane, fields.road_number),
   );
   const hasRural = !!fields.village;
 
   if (hasRoad) {
     if (fields.road) lines.push(`路：${fields.road} (+2)`);
     if (fields.lane) lines.push(`弄：${fields.lane} (+2)`);
-    if (fields.number) lines.push(`路号：${fields.number} (+2)`);
+    if (fields.road_number) lines.push(`路号：${fields.road_number} (+2)`);
     if (fields.sub_lane) lines.push(`支弄：${fields.sub_lane}`);
     if (fields.alley) lines.push(`巷：${fields.alley}`);
     if (fields.building) lines.push(`楼栋：${fields.building} (+1)`);

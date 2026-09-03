@@ -12,6 +12,8 @@ function resetStore() {
     editingId: null,
     detailOpen: false,
     detailId: null,
+    parseOpen: false,
+    previewDraft: null,
     deleteRow: null,
     batchDeleteOpen: false,
   });
@@ -50,12 +52,32 @@ describe("std-address-store 编辑态流转", () => {
     expect(s.editingId).toBeNull();
   });
 
-  it("openCreate 清空 editingId(新建不走 getById)", () => {
-    useStdAddressStore.getState().openEdit("row-1");
-    useStdAddressStore.getState().openCreate();
+  it("openParse 打开解析弹窗(新建不走 getById,不影响编辑态)", () => {
+    useStdAddressStore.getState().openParse();
     const s = useStdAddressStore.getState();
+    expect(s.parseOpen).toBe(true);
+    // 新建是解析→准入流程,不进入表单编辑态
     expect(s.editingId).toBeNull();
-    expect(s.formOpen).toBe(true);
+    expect(s.formOpen).toBe(false);
+
+    // openPreview:解析成功后切到预览态,关闭解析弹窗
+    useStdAddressStore.getState().openPreview({
+      rawAddress: "永跃路260弄38号",
+      stdAddress: "上海市闵行区永跃路260弄38号",
+      stdScore: 9,
+      fields: {},
+    });
+    const p = useStdAddressStore.getState();
+    expect(p.previewDraft).not.toBeNull();
+    expect(p.detailOpen).toBe(true);
+    expect(p.parseOpen).toBe(false);
+
+    // closePreview:清空预览与 detailId
+    useStdAddressStore.getState().closePreview();
+    const c = useStdAddressStore.getState();
+    expect(c.previewDraft).toBeNull();
+    expect(c.detailOpen).toBe(false);
+    expect(c.detailId).toBeNull();
   });
 
   it("删除流转:requestDelete 只存 id/name,确认后 cancel 清空", () => {

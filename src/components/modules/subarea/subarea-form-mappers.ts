@@ -24,6 +24,10 @@ export type SubareaFormValues = {
   /** JSON 文本(数组),用户无感知 */
   alias: string;
   regionId: string;
+  /** 关联实体类型:community/village/poi,空串 = 未关联 */
+  entityType?: string;
+  /** 关联实体 id(entity_id 实际是 小区/村/POI 的主键),空串 = 未关联 */
+  entityId?: string;
   status: 0 | 1;
   /** JSON 文本(数组),用户无感知 */
   address: string;
@@ -40,6 +44,8 @@ export type SubareaDetailLike = {
   name: string;
   alias: unknown;
   regionId: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
   /** DB 是 Int,详情输出为 number;表单内收窄为 0|1 */
   status: number;
   address: unknown;
@@ -54,6 +60,10 @@ export const formSchema = z.object({
   // alias 多值:TagInput 控制 20 条上限;每条限长 100
   alias: z.array(z.object({ value: z.string().max(100, "别名最长 100 字") })),
   regionId: z.string(),
+  /** 关联实体类型:community/village/poi;空串/缺省 = 未关联 */
+  entityType: z.string().optional(),
+  /** 关联实体 id;空串/缺省 = 未关联(与 entityType 成对) */
+  entityId: z.string().optional(),
   status: z.union([z.literal(0), z.literal(1)]),
   // 表单内是地址条目数组(每条一个 Input),提交时才序列化成 JSON。
   // 条目用 { value } 对象形态 —— RHF 的 useFieldArray 不支持元素为原始类型的数组
@@ -74,6 +84,8 @@ export const EMPTY_FORM: FormSchema = {
   name: "",
   alias: [],
   regionId: "",
+  entityType: "",
+  entityId: "",
   status: 1,
   address: [],
   property: [],
@@ -117,6 +129,8 @@ export function toForm(
     name: initial.name,
     alias: toAliasEntries(initial.alias),
     regionId: initial.regionId ?? "",
+    entityType: initial.entityType ?? "",
+    entityId: initial.entityId ?? "",
     status: initial.status === 0 ? 0 : 1,
     address: toAddrEntries(initial.address),
     property: toPropertyEntries(initial.property),
@@ -146,6 +160,10 @@ export function toSubmit(values: FormSchema): SubareaFormValues {
     name: values.name.trim(),
     alias: serialize(values.alias),
     regionId: values.regionId,
+    // 实体成对提交:trim 后仍为空串 = 未关联(路由层把 "" 归 null;
+    // 页面提交时不传 undefined,保证编辑时"清空关联"能真正落库)
+    entityType: (values.entityType ?? "").trim(),
+    entityId: (values.entityId ?? "").trim(),
     status: values.status,
     address: serialize(values.address),
     property: JSON.stringify(propertyObj),

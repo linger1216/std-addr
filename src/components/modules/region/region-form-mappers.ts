@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { RouterOutputs } from "@/trpc/react";
 import { STATUS } from "@/lib/constants";
 import { REGION_TYPES } from "@/lib/region-import";
+import { parseAliasEntries } from "@/lib/alias-entries";
 import { findNodeByCode } from "./region-tree-utils";
 
 /** 树数据 = region.list 输出(单一事实来源) */
@@ -22,6 +23,8 @@ export const regionFormSchema = z.object({
     .max(50, "编码最长 50 字"),
   /** 区划类型(省/市/区/街道/镇/居(村)委会…),可留空 */
   type: z.string().trim().max(50, "类型最长 50 字").optional(),
+  /** 别名 / 别称(曾用名,多值;TagInput 控制 20 条上限,每条限长 100) */
+  alias: z.array(z.object({ value: z.string().max(100, "别名最长 100 字") })),
   /** 上级编码;"" = 顶级(与 SearchSelect 空值约定一致) */
   parentCode: z.string().optional(),
   /** 排序,数字字符串(Input type=number) */
@@ -40,6 +43,8 @@ export type RegionFormValues = {
   name: string;
   code: string;
   type?: string;
+  /** 别名 / 别称(JSON 文本,用户无感知;空列表 = "[]") */
+  alias: string;
   /** ""/undefined → 顶级 */
   parentCode?: string;
   sortOrder: number;
@@ -52,6 +57,7 @@ export function toForm(node: RegionTreeNode | null | undefined): RegionFormSchem
     name: node?.name ?? "",
     code: node?.code ?? "",
     type: node?.type ?? "",
+    alias: parseAliasEntries(node?.alias).map((s) => ({ value: s })),
     parentCode: node?.parentCode ?? "",
     sortOrder: String(node?.sortOrder ?? 0),
     status: node?.status === STATUS.DISABLED ? STATUS.DISABLED : STATUS.ENABLED,
@@ -71,12 +77,16 @@ export function regionTypeOptions(current: string | undefined): string[] {
   return [...set];
 }
 
-/** 表单值 → 提交值(空串归一、数字转换) */
+/** 表单值 → 提交值(空串归一、数字转换、别名序列化为 JSON 文本) */
 export function toSubmit(values: RegionFormSchema): RegionFormValues {
   return {
     name: values.name.trim(),
     code: values.code.trim(),
     type: trimToUndefined(values.type),
+    // 别名条目去空后序列化成 JSON 文本(空列表 → "[]",路由层转 JsonNull)
+    alias: JSON.stringify(
+      values.alias.map((a) => a.value.trim()).filter((s) => s.length > 0),
+    ),
     parentCode: trimToUndefined(values.parentCode),
     sortOrder: Number(values.sortOrder ?? 0),
     status: values.status,

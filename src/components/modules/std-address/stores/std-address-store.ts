@@ -15,6 +15,8 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import type { RowSelectionState, SortingState } from "@tanstack/react-table";
+import type { StdFields } from "@/lib/standardize/build";
+import type { TraceStep } from "@/components/modules/std-address/std-address-standardize-trace";
 
 /** 排序 id 白名单(对应后端 list procedure 的 sort enum) */
 export type StdAddressSortId =
@@ -23,6 +25,21 @@ export type StdAddressSortId =
   | "stdScore"
   | "status"
   | "createdAt";
+
+/**
+ * 新建「解析→准入」流程的草稿预览。
+ * 由 StdAddressParseDialog 解析成功后写入,StdAddressDetailDialog 以草稿态渲染,
+ * 用户点「准入」才真正 create 落库。
+ */
+export interface StdAddressPreviewDraft {
+  rawAddress: string;
+  stdAddress: string | null;
+  stdScore: number | string | null;
+  fields: StdFields;
+  status?: 0 | 1;
+  /** 解析时已带 debug,直接随草稿传入,详情弹窗无需再次运行流程 */
+  trace?: TraceStep[];
+}
 
 type SortingUpdater = (old: SortingState) => SortingState;
 type RowSelectionUpdater = (old: RowSelectionState) => RowSelectionState;
@@ -36,6 +53,10 @@ interface State {
   editingId: string | null;
   detailOpen: boolean;
   detailId: string | null;
+  /** 新建「解析→准入」:解析输入弹窗是否打开 */
+  parseOpen: boolean;
+  /** 新建「解析→准入」:解析成功后的草稿预览(未落库) */
+  previewDraft: StdAddressPreviewDraft | null;
   /** 待删除单条(只存 id/name,不持有整条数据) */
   deleteRow: { id: string; name: string } | null;
   batchDeleteOpen: boolean;
@@ -50,15 +71,19 @@ interface Actions {
   // 选中
   setRowSelection: (next: RowSelectionState | RowSelectionUpdater) => void;
   clearSelection: () => void;
-  // 表单
-  openCreate: () => void;
+  // 表单(仅编辑;新建走解析→准入流程)
   openEdit: (id: string) => void;
   /** 由 useEffect 监听详情加载完成后调用,避免重复 effect 打开表单 */
   openFormWhenReady: () => void;
   closeForm: () => void;
-  // 详情
+  // 详情 / 预览
   openView: (id: string) => void;
   closeDetail: () => void;
+  // 新建「解析→准入」
+  openParse: () => void;
+  closeParse: () => void;
+  openPreview: (draft: StdAddressPreviewDraft) => void;
+  closePreview: () => void;
   // 删除
   requestDelete: (row: { id: string; name: string }) => void;
   cancelDelete: () => void;
@@ -75,6 +100,8 @@ export const useStdAddressStore = create<State & Actions>()((set, get) => ({
   editingId: null,
   detailOpen: false,
   detailId: null,
+  parseOpen: false,
+  previewDraft: null,
   deleteRow: null,
   batchDeleteOpen: false,
 
@@ -91,7 +118,6 @@ export const useStdAddressStore = create<State & Actions>()((set, get) => ({
     }),
   clearSelection: () => set({ rowSelection: {} }),
 
-  openCreate: () => set({ editingId: null, formOpen: true }),
   openEdit: (id) => set({ editingId: id }),
   openFormWhenReady: () => {
     const { editingId, formOpen } = get();
@@ -100,7 +126,13 @@ export const useStdAddressStore = create<State & Actions>()((set, get) => ({
   closeForm: () => set({ formOpen: false, editingId: null }),
 
   openView: (id) => set({ detailId: id, detailOpen: true }),
-  closeDetail: () => set({ detailOpen: false }),
+  closeDetail: () => set({ detailOpen: false, detailId: null, previewDraft: null }),
+
+  openParse: () => set({ parseOpen: true }),
+  closeParse: () => set({ parseOpen: false }),
+  openPreview: (draft) =>
+    set({ previewDraft: draft, detailOpen: true, detailId: null, parseOpen: false }),
+  closePreview: () => set({ detailOpen: false, previewDraft: null, detailId: null }),
 
   requestDelete: (row) => set({ deleteRow: row }),
   cancelDelete: () => set({ deleteRow: null }),
@@ -120,6 +152,8 @@ type UiSlice = Pick<
   | "editingId"
   | "detailOpen"
   | "detailId"
+  | "parseOpen"
+  | "previewDraft"
   | "deleteRow"
   | "batchDeleteOpen"
 >;
@@ -135,6 +169,8 @@ export function useStdAddressState(): UiSlice {
       editingId: s.editingId,
       detailOpen: s.detailOpen,
       detailId: s.detailId,
+      parseOpen: s.parseOpen,
+      previewDraft: s.previewDraft,
       deleteRow: s.deleteRow,
       batchDeleteOpen: s.batchDeleteOpen,
     })),
@@ -148,12 +184,15 @@ type ActionsSlice = Pick<
   | "setSorting"
   | "setRowSelection"
   | "clearSelection"
-  | "openCreate"
   | "openEdit"
   | "openFormWhenReady"
   | "closeForm"
   | "openView"
   | "closeDetail"
+  | "openParse"
+  | "closeParse"
+  | "openPreview"
+  | "closePreview"
   | "requestDelete"
   | "cancelDelete"
   | "requestBatchDelete"
@@ -168,12 +207,15 @@ export function useStdAddressActions(): ActionsSlice {
       setSorting: s.setSorting,
       setRowSelection: s.setRowSelection,
       clearSelection: s.clearSelection,
-      openCreate: s.openCreate,
       openEdit: s.openEdit,
       openFormWhenReady: s.openFormWhenReady,
       closeForm: s.closeForm,
       openView: s.openView,
       closeDetail: s.closeDetail,
+      openParse: s.openParse,
+      closeParse: s.closeParse,
+      openPreview: s.openPreview,
+      closePreview: s.closePreview,
       requestDelete: s.requestDelete,
       cancelDelete: s.cancelDelete,
       requestBatchDelete: s.requestBatchDelete,

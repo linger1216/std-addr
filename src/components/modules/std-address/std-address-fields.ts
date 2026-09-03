@@ -20,7 +20,6 @@ const LABELS: Record<StdAddressFieldKey, string> = {
   district: "区县",
   street: "街道",
   town: "镇",
-  township: "乡",
   community: "小区",
   village: "村",
   subarea: "子区域",
