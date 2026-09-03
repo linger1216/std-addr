@@ -12,7 +12,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { flattenRegionJson, type RegionJsonOrgNode } from "@/lib/region-import";
+import {
+  flattenRegionJson,
+  injectRegionAdminRoots,
+  type RegionJsonOrgNode,
+} from "@/lib/region-import";
 import { toErrorMessage } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -35,9 +39,11 @@ function parseFile(text: string): Parsed {
     throw new Error("文件结构不正确:期望 { code, msg, data: [...] } 或根数组");
   }
   const summary = flattenRegionJson(data as RegionJsonOrgNode[]);
+  // 预览与后端导入一致:自动补全 上海市/闵行区 根并按 type 重算 level
+  const importable = injectRegionAdminRoots(summary.items).length;
   return {
     data: data as RegionJsonOrgNode[],
-    importable: summary.items.length,
+    importable,
     skipped: summary.skipped,
     warnings: summary.warnings,
   };

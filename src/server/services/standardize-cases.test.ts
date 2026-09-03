@@ -132,7 +132,7 @@ const CASES: StdCase[] = [
     id: "PRE-A3", category: "预处理", description: "去除多余空格",
     raw: `闵行区  ${Q}  都市路  16号  701室`,
     ml: { district: "闵行区", town: Q, road: "都市路", building: "16号", room: "701室" },
-    expected: { stdAddress: `闵行区${Q}都市路16号701室`, fieldsExist: ["district", "town", "road", "room"] },
+    expected: { stdAddress: `闵行区${Q}都市路16号701室`, fieldsExist: ["district", "street", "road", "room"] },
   },
   {
     id: "PRE-A4", category: "预处理", description: "去除井号",
@@ -315,7 +315,7 @@ const CASES: StdCase[] = [
     raw: `浦江镇杨家巷村302号`,
     ml: { town: P, village: "杨家巷村", room: "302号" },
     db: { village: [{ id: "cmtcluiqw0007gxxsp7uicrxq", name: "杨家巷村", regionId: "cmtcluiqw0007gxxsp7uicrxq" }] },
-    expected: { stdAddress: "华漕镇杨家巷村302号", fieldsExist: ["village", "town"] },
+    expected: { stdAddress: "华漕镇杨家巷村302号", fieldsExist: ["village", "street"] },
   },
 
   // ============ H/I/J. 路弄号/路号(主库无 ref 表 → 无实体填充) ============
@@ -376,16 +376,16 @@ const CASES: StdCase[] = [
 
   // ============ K. 上下文推断 ============
   {
-    id: "INF-A1", category: "上下文推断", description: "无区划 → 锚点命中镇,填 town",
+    id: "INF-A1", category: "上下文推断", description: "无区划 → 锚点命中镇,填 street",
     raw: `颛桥镇都市阳光花园16号701室`,
     ml: { town: Q, community: "都市阳光花园", building: "16号", room: "701室" },
-    expected: { stdAddress: `颛桥镇都市阳光花园16号701室`, fieldsExist: ["town"] },
+    expected: { stdAddress: `颛桥镇都市阳光花园16号701室`, fieldsExist: ["street"] },
   },
   {
     id: "INF-A2", category: "上下文推断", description: "仅区+镇 → 保留 ML 区名(库无区级)",
     raw: `闵行区颛桥镇`,
     ml: { district: "闵行区", town: Q },
-    expected: { stdAddress: `闵行区${Q}`, score: 2, fieldsExist: ["town", "district"] },
+    expected: { stdAddress: `闵行区${Q}`, score: 2, fieldsExist: ["street", "district"] },
   },
   {
     id: "INF-A3", category: "上下文推断", description: "仅有区 → 无法向上推断市(主库无市实体)",
@@ -403,7 +403,7 @@ const CASES: StdCase[] = [
     id: "INF-A5", category: "上下文推断", description: "无任何行政 → ML 解析出镇",
     raw: "都市阳光花园16号701室",
     ml: { town: Q, community: "都市阳光花园", building: "16号", room: "701室" },
-    expected: { stdAddress: `颛桥镇都市阳光花园16号701室`, fieldsExist: ["town"] },
+    expected: { stdAddress: `颛桥镇都市阳光花园16号701室`, fieldsExist: ["street"] },
   },
 
   // ============ L. 行政去重 ============
@@ -491,14 +491,14 @@ const CASES: StdCase[] = [
     raw: `七宝镇万博家园10号402室`,
     ml: { town: "七宝镇", community: "万博家园", building: "10号", room: "402室" },
     db: { community: [{ id: "c000001a03e838ba32cad1aa8", name: "万博家园", regionId: "1254" }] },
-    expected: { stdAddress: `华漕镇万博家园10号402室`, fieldsExist: ["town"] },
+    expected: { stdAddress: `华漕镇万博家园10号402室`, fieldsExist: ["street"] },
   },
   {
-    id: "ADM-A1", category: "行政推断", description: "镇锚点用别名命中(华漕=华漕镇),town 归一到规范名",
+    id: "ADM-A1", category: "行政推断", description: "镇锚点用别名命中(华漕=华漕镇),street 归一到规范名",
     raw: "华漕金光路199号",
     ml: { town: "华漕", road: "金光路", road_number: "199号" },
     // 规范名 "华漕镇" 不含锚点 "华漕" → name 不命中;靠 alias=["华漕"] 命中,行政链填规范名
-    expected: { stdAddress: "华漕镇金光路199号", fieldsExist: ["town"] },
+    expected: { stdAddress: "华漕镇金光路199号", fieldsExist: ["street"] },
   },
   {
     id: "ADM-A2", category: "行政推断", description: "街道别名命中(浦锦=浦锦街道),street 归一到规范名",

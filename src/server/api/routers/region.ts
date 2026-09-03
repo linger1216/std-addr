@@ -10,6 +10,7 @@ import {
 } from "@/lib/validators/region";
 import {
   flattenRegionJson,
+  injectRegionAdminRoots,
   inferRegionType,
   type RegionImportItem,
 } from "@/lib/region-import";
@@ -287,6 +288,10 @@ export const regionRouter = createTRPCRouter({
         });
       }
 
+      // 自动补全顶层行政区划根(上海市 310 → 闵行区 310112)并按 type 重算 level,
+      // 使树形显示 上海市 → 闵行区 → 街镇 → 居村委
+      const items = injectRegionAdminRoots(summary.items);
+
       const result = await ctx.db.$transaction(async (tx) => {
         const existing = await tx.region.findMany({
           select: { id: true, code: true },
@@ -296,7 +301,7 @@ export const regionRouter = createTRPCRouter({
 
         let created = 0;
         let updated = 0;
-        for (const item of summary.items) {
+        for (const item of items) {
           const id = byCode.get(item.code);
           if (id) {
             await tx.region.update({
@@ -313,7 +318,7 @@ export const regionRouter = createTRPCRouter({
         }
 
         // 文件里已消失的编码 → 整批删除(先解除引用,避免 FK 报错)
-        const codeSet = new Set(summary.items.map((i) => i.code));
+        const codeSet = new Set(items.map((i) => i.code));
         const removedIds = existing
           .filter((r) => !codeSet.has(r.code))
           .map((r) => r.id);
@@ -323,7 +328,7 @@ export const regionRouter = createTRPCRouter({
         }
 
         return {
-          total: summary.items.length,
+          total: items.length,
           created,
           updated,
           deleted: removedIds.length,
@@ -335,7 +340,7 @@ export const regionRouter = createTRPCRouter({
         skipped: summary.skipped,
         warnings: summary.warnings,
         /** 首个导入节点 code(前端导入后定位用) */
-        firstCode: summary.items[0]?.code ?? null,
+        firstCode: items[0]?.code ?? null,
       };
     }),
 

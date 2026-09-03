@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   REGION_TYPES,
   flattenRegionJson,
+  injectRegionAdminRoots,
   inferRegionType,
   type RegionJsonOrgNode,
+  type RegionImportItem,
 } from "./region-import";
 
 /** 构造一个 org 节点 */
@@ -354,6 +356,80 @@ describe("flattenRegionJson(region.json → regions 行)", () => {
     const { items } = flattenRegionJson(data);
     expect(items[0]?.alias).toEqual([]);
     expect(items[1]?.alias).toEqual([]);
+  });
+});
+
+describe("injectRegionAdminRoots(自动补 上海市/闵行区 根 + 按 type 重算 level)", () => {
+  /** 构造一组 flattenRegionJson 的产物(跳过筛选,只看根补全/level) */
+  function flat(names: string[]): RegionImportItem[] {
+    return flattenRegionJson(
+      names.map((name, i) =>
+        node(name, { addressStandardCode: `310112${String(i).padStart(3, "0")}` }),
+      ),
+    ).items;
+  }
+
+  it("前置 上海市(310,市) 与 闵行区(310112,区),level 按 type 省1市2区3街镇4居村委5", () => {
+    const items = injectRegionAdminRoots(flat(["浦江镇", "聚缘居民委员会"]));
+    const byCode = new Map(items.map((i) => [i.code, i]));
+    expect(byCode.get("310")?.name).toBe("上海市");
+    expect(byCode.get("310")?.type).toBe("市");
+    expect(byCode.get("310")?.level).toBe(2);
+    expect(byCode.get("310")?.parentCode).toBeNull();
+    expect(byCode.get("310112")?.name).toBe("闵行区");
+    expect(byCode.get("310112")?.type).toBe("区");
+    expect(byCode.get("310112")?.level).toBe(3);
+    expect(byCode.get("310112")?.parentCode).toBe("310");
+  });
+
+  it("无父的顶层区划节点挂到闵行区 310112 下,fullName 补 上海市/闵行区/ 前缀,level 升为街镇4/居村委5", () => {
+    const data = [
+      node("浦江镇", {
+        addressStandardCode: "310112114",
+        childList: [node("聚缘居民委员会", { addressStandardCode: "310112114021" })],
+      }),
+    ];
+    const items = injectRegionAdminRoots(flattenRegionJson(data).items);
+    const byCode = new Map(items.map((i) => [i.code, i]));
+    expect(byCode.get("310112114")?.parentCode).toBe("310112"); // 浦江镇 → 闵行区
+    expect(byCode.get("310112114")?.level).toBe(4); // 乡镇
+    expect(byCode.get("310112114")?.type).toBe("乡镇");
+    expect(byCode.get("310112114021")?.parentCode).toBe("310112114"); // 居委 → 镇
+    expect(byCode.get("310112114021")?.level).toBe(5); // 居委会
+    expect(byCode.get("310112114021")?.type).toBe("居委会");
+    expect(byCode.get("310112114021")?.fullName).toBe(
+      "上海市/闵行区/浦江镇/聚缘居民委员会",
+    );
+  });
+
+  it("数据集已含 310 / 310112 时不重复造根(避免重复 code)", () => {
+    const base = flat(["浦江镇"]);
+    const withMinhang = [
+      ...base,
+      {
+        code: "310112",
+        name: "闵行区(已存在)",
+        parentCode: "310",
+        level: 3,
+        fullName: "上海市/闵行区(已存在)",
+        sortOrder: 0,
+        type: "区" as const,
+        alias: [],
+      },
+    ];
+    const items = injectRegionAdminRoots(withMinhang);
+    const minhang = items.filter((i) => i.code === "310112");
+    expect(minhang).toHaveLength(1); // 不重复
+    expect(minhang[0]?.name).toBe("闵行区(已存在)");
+  });
+
+  it("type 为空(null)的节点保留原深度 level,不被 5 级覆盖", () => {
+    // 「某里弄」含区划特征(里弄)会被保留,但 inferRegionType 无法识别 type → null
+    const items = injectRegionAdminRoots(flat(["某里弄"]));
+    const byCode = new Map(items.map((i) => [i.code, i]));
+    const leaf = byCode.get("310112000");
+    expect(leaf?.type).toBeNull();
+    expect(leaf?.level).toBeGreaterThan(0); // 保留 flattenRegionJson 的深度层级
   });
 });
 

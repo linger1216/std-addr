@@ -240,3 +240,76 @@ export function flattenRegionJson(
 
   return { items, skipped, warnings };
 }
+
+/** 导入时自动补全的顶层行政区划根:上海市(310) → 闵行区(310112)。
+ * 这样树形可显示 上海市 → 闵行区 → 街镇 → 居村委。
+ * 约定:导入的 region.json 全为闵行区下辖,所有「无父」的顶层区划节点挂到
+ * 闵行区 310112 下,并补全 上海市/闵行区 路径前缀。 */
+const REGION_ROOT_SHANGHAI: RegionImportItem = {
+  code: "310",
+  name: "上海市",
+  parentCode: null,
+  level: 2,
+  fullName: "上海市",
+  sortOrder: 0,
+  type: "市",
+  alias: [],
+};
+
+const REGION_ROOT_MINHANG: RegionImportItem = {
+  code: "310112",
+  name: "闵行区",
+  parentCode: "310",
+  level: 3,
+  fullName: "上海市/闵行区",
+  sortOrder: 0,
+  type: "区",
+  alias: [],
+};
+
+/** 行政区划层级:省1 / 市2 / 区3 / 街镇(街道+乡镇)4 / 居村委(居委会+村委会)5。
+ * 小区/开发区 非标准行政层级,沿用街镇/区 口径(见 inferRegionType 注释)。 */
+const REGION_LEVEL_BY_TYPE: Record<RegionType, number> = {
+  省: 1,
+  市: 2,
+  区: 3,
+  街道: 4,
+  乡镇: 4,
+  小区: 4,
+  居委会: 5,
+  村委会: 5,
+  开发区: 3,
+};
+
+/**
+ * 在 flattenRegionJson 结果上补齐行政区划根 + 按 type 重算 level:
+ *   1. level 改按 type 推断(省1市2区3街镇4居村委5);type 为空保留原深度层级
+ *   2. 无父(parentCode=null)的顶层节点挂到闵行区 310112 下,
+ *      fullName 补 `上海市/闵行区/` 前缀
+ *   3. 前置 上海市 / 闵行区 两个根(数据集已含同 code 则不重复添加)
+ * 纯函数,无 IO;导入(router)与前端预览(region-json-import)共用,保证一致。
+ */
+export function injectRegionAdminRoots(
+  items: RegionImportItem[],
+): RegionImportItem[] {
+  const leveled = items.map((it) => ({
+    ...it,
+    level: it.type ? REGION_LEVEL_BY_TYPE[it.type] : it.level,
+  }));
+  // 全部顶层节点挂到闵行区 310112 下(无父的变 310112 子),并为所有节点补全
+  // 上海市/闵行区 路径前缀,使树形显示完整 上海市 → 闵行区 → 街镇 → 居村委
+  const reparented = leveled.map((it) => ({
+    ...it,
+    parentCode: it.parentCode ?? REGION_ROOT_MINHANG.code,
+    fullName: `${REGION_ROOT_MINHANG.fullName}/${it.fullName}`,
+  }));
+  const hasShanghai = reparented.some(
+    (it) => it.code === REGION_ROOT_SHANGHAI.code,
+  );
+  const hasMinhang = reparented.some((it) => it.code === REGION_ROOT_MINHANG.code);
+  const roots: RegionImportItem[] = [
+    ...(hasShanghai ? [] : [REGION_ROOT_SHANGHAI]),
+    ...(hasMinhang ? [] : [REGION_ROOT_MINHANG]),
+  ];
+  return [...roots, ...reparented];
+}

@@ -2,7 +2,7 @@
  * 标准地址库 · 标准化服务(10 步流水线)。
  *
  * 从旧架构 stdaddr-service/server/services/standardizeService.js(872 行)迁移:
- * 预处理 → 缓存 → ML 解析 → 清洗(含中文数字) → 上下文推断 → DB 匹配覆盖
+ * 预处理 → 缓存 → ML 解析 → 清洗(含中文数字) → 上下文推断 → 实体匹配覆盖
  * → 行政去重 → 拼接 → 评分。
  *
  * 降级(缺失表暂不使用,后续加强):
@@ -95,24 +95,42 @@ interface AdminFields {
 /**
  * region 层级 → 行政字段。
  *
- * 主库实际数据语义(与旧库不同!):
- *  - level 1 = 街道/镇(名称后缀区分:镇/乡 → town;街道/其它 → street)
- *  - level 2 = 居民委员会/村民委员会 → neighborhood
- *  - 主库无省/市/区层级;预留 3=district、4=province/city 扩展位
- *    (若后续导入省市数据,需按名称后缀细化)
+省 1
+市 2
+区 3
+街镇 4
+局村委 5
+ *
  */
+/** region 行 → 行政字段映射。
+ * 优先按 type(注入后的 region 表:省1 市2 区3 街镇4 居村委5),无 type 时按旧深度层级兜底,
+ * 兼容无 type 的测试 mock fixture。镇/乡/街道/小区 → street;居委/村委 → neighborhood。 */
 function regionFieldFor(region: {
   level: number;
   name: string;
+  type?: string | null;
 }): keyof AdminFields | null {
-  const name = region.name;
-  if (region.level === 1) {
-    if (name.endsWith("镇") || name.endsWith("乡")) return "town";
-    return "street";
+  switch (region.type) {
+    case "省":
+      return "province";
+    case "市":
+      return "city";
+    case "区":
+      return "district";
+    case "街道":
+    case "乡镇":
+    case "小区":
+      return "street";
+    case "居委会":
+    case "村委会":
+      return "neighborhood";
   }
+  // 无 type 兜底(旧深度层级:街镇1 / 居委2)
+  if (region.level === 1) return "street";
   if (region.level === 2) return "neighborhood";
   if (region.level === 3) return "district";
   if (region.level === 4) return "street";
+  if (region.level === 5) return "neighborhood";
   return null;
 }
 
@@ -195,6 +213,7 @@ async function matchSubarea(
       OR: [
         { name: { contains: keyword } },
         { alias: { string_contains: keyword } },
+        { alias: { array_contains: keyword } },
       ],
     },
     select: { id: true, name: true, regionId: true },
@@ -272,9 +291,12 @@ async function mlParse(cleaned: string): Promise<StdFields> {
   }
   const data = body.data ?? {};
   const fields: StdFields = { ...data };
-  // 乡(township)与镇(town)合并为 town(统称为 town)
+  // 乡(township)/镇(town) 归一为 street(镇/街道统一落到 street 字段,不再写入 town)
   const tw = (data as Record<string, string | undefined>).township;
-  if (tw) fields.town = fields.town ?? tw;
+  if (tw) fields.street = fields.street ?? tw;
+  const mlTown = (data as Record<string, string | undefined>).town;
+  if (mlTown) fields.street = fields.street ?? mlTown;
+  delete fields.town;
   // ML 若直接返回居委(neighborhood 或 region),两个 key 保持同值(评分读 region)
   syncNeighborhoodRegion(fields);
   return fields;
@@ -461,9 +483,8 @@ class StandardizeService {
     // ====== 3~10:后续步骤 (debug 下任意异常降级返回 partial trace) ======
     try {
       // ====== 3. 清洗地址要素符号污染(含 team/group 中文数字转阿拉伯) ======
-      const beforeClean = { ...res.fields };
       cleanFields(res.fields);
-      trace("后清洗", "清洗地址要素", beforeClean, null, "清洗地址要素符号污染");
+      trace("后清洗", "清洗地址要素", null, null, "清洗地址要素符号污染");
 
       // ====== 5. 上下文推断(向上反查省市) ======
       await this.inferAdmin(res.fields, trace);
@@ -483,7 +504,7 @@ class StandardizeService {
       // 1. 匹配:用 ML community 名称/别名查小区。未命中 → skip + note「小区流程结束」。
       // 2. 命中:
       //   - 先用库内规范名替换 fields.community(S32 → S32小区),trace 里标明「别名命中→替换规范名」。
-      //   - 小区有 region_id → 它直接归属一个居委,getRegionAncestors 采用该居委,记 DB 匹配(小区→居委)。
+      //   - 小区有 region_id → 它直接归属一个居委,getRegionAncestors 采用该居委,记 实体匹配(小区→居委)。
       //   - 小区无 region_id → 走子区域判定:
       //       - 先按源地址 building 精确命中子区域 property.building(matchSubareaByBuilding,归一化 16号→16/A栋→A);
       //     - 未命中再用 ML subarea 名兜底(matchSubarea);
@@ -504,6 +525,8 @@ class StandardizeService {
               { name: { contains: communityNormalized } },
               { alias: { string_contains: mlCommunity } },
               { alias: { string_contains: communityNormalized } },
+              { alias: { array_contains: mlCommunity } },
+              { alias: { array_contains: communityNormalized } },
             ],
           },
           select: { id: true, name: true, regionId: true },
@@ -525,11 +548,11 @@ class StandardizeService {
         if (!communityMatch) {
           // 名称/别名都没命中 → 该地址不属于任何已维护小区,小区流程直接结束
           trace(
-            "DB 匹配(小区)",
+            "实体匹配",
             "小区匹配",
             mlCommunity,
             undefined,
-            `小区名称/别名未命中(「${mlCommunity}」),小区流程结束`,
+            `小区名称/别名未命中( 「${mlCommunity}」 ), 小区流程结束`,
             "skip",
           );
         } else {
@@ -539,7 +562,7 @@ class StandardizeService {
             matchedCommunityName !== mlCommunity ? matchedCommunityName : null;
           if (replacedName) res.fields.community = replacedName;
           trace(
-            "DB 匹配(小区)",
+            "实体匹配",
             "小区匹配",
             mlCommunity,
             matchedCommunityName,
@@ -556,7 +579,7 @@ class StandardizeService {
             );
             applyAdminToFields(res.fields, admin);
             trace(
-              "DB 匹配(小区)",
+              "实体匹配",
               "采用小区自带居委",
               {
                 community: matchedCommunityName,
@@ -582,7 +605,7 @@ class StandardizeService {
                 res.fields.building,
               );
               trace(
-                "DB 匹配(小区)",
+                "实体匹配",
                 "子区域·楼栋范围",
                 {
                   community: matchedCommunityName,
@@ -603,7 +626,7 @@ class StandardizeService {
                 communityMatch.id,
               );
               trace(
-                "DB 匹配(小区)",
+                "实体匹配",
                 "子区域·名称兜底",
                 {
                   community: matchedCommunityName,
@@ -629,7 +652,7 @@ class StandardizeService {
                 );
                 applyAdminToFields(res.fields, subAdmin);
                 trace(
-                  "DB 匹配(小区)",
+                  "实体匹配",
                   "子区域→region",
                   {
                     subarea: subareaMatch.name,
@@ -641,7 +664,7 @@ class StandardizeService {
                 );
               } else {
                 trace(
-                  "DB 匹配(小区)",
+                  "实体匹配",
                   "子区域→region",
                   { subarea: subareaMatch.name },
                   undefined,
@@ -651,7 +674,7 @@ class StandardizeService {
               }
             } else {
               trace(
-                "DB 匹配(小区)",
+                "实体匹配",
                 "子区域判定",
                 {
                   community: matchedCommunityName,
@@ -678,6 +701,8 @@ class StandardizeService {
               { name: { contains: poiNormalized } },
               { alias: { string_contains: res.fields.poi } },
               { alias: { string_contains: poiNormalized } },
+              { alias: { array_contains: res.fields.poi } },
+              { alias: { array_contains: poiNormalized } },
             ],
           },
           select: { id: true, name: true, regionId: true },
@@ -698,7 +723,7 @@ class StandardizeService {
           const [, poiFields] = await getRegionAncestors(matchPoi.regionId);
           applyAdminToFields(res.fields, poiFields);
           trace(
-            "DB 匹配(POI)",
+            "实体匹配",
             "POI 匹配",
             res.fields.poi,
             matchPoi.name,
@@ -706,7 +731,7 @@ class StandardizeService {
             "match",
           );
         } else {
-          trace("DB 匹配(POI)", "POI 匹配", res.fields.poi, undefined, "未命中", "skip");
+          trace("实体匹配", "POI 匹配", res.fields.poi, undefined, "未命中", "skip");
         }
       }
 
@@ -721,6 +746,8 @@ class StandardizeService {
               { name: { contains: villageNormalized } },
               { alias: { string_contains: res.fields.village } },
               { alias: { string_contains: villageNormalized } },
+              { alias: { array_contains: res.fields.village } },
+              { alias: { array_contains: villageNormalized } },
             ],
           },
           select: { id: true, name: true, regionId: true },
@@ -743,7 +770,7 @@ class StandardizeService {
           );
           applyAdminToFields(res.fields, villageFields);
           trace(
-            "DB 匹配(村)",
+            "实体匹配",
             "村匹配",
             res.fields.village,
             matchVillage.name,
@@ -751,7 +778,7 @@ class StandardizeService {
             "match",
           );
         } else {
-          trace("DB 匹配(村)", "村匹配", res.fields.village, undefined, "未命中", "skip");
+          trace("实体匹配", "村匹配", res.fields.village, undefined, "未命中", "skip");
         }
       }
       // 路弄号映射(RoadLaneNumber/Ref)缺失 → 降级跳过
@@ -840,8 +867,8 @@ class StandardizeService {
     }
     if (!region) {
       trace?.(
-        "上下文推断",
-        "region 反查",
+        "基础推断",
+        "行政区划匹配",
         anchors,
         null,
         "无锚点命中 region 表(名称与别名均未命中)",
@@ -851,10 +878,11 @@ class StandardizeService {
     }
 
     const [, admin] = await getRegionAncestors(region.id);
+    console.log("基础推断:region 命中 → 行政链", admin);
     applyAdminToFields(fields, admin);
     trace?.(
-      "上下文推断",
-      "region 反查",
+      "基础推断",
+      "行政区划匹配",
       anchors,
       admin,
       matchedAlias === null

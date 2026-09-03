@@ -136,8 +136,9 @@ describe("standardizeService 10 步流水线", () => {
     const res = await standardizeService.standardize("阳光花园16号701室");
 
     // 行政链:万博家园居民委员会(level2 居委)→ 华漕镇(level1);主库无省市层级
+    // 注:regionFieldFor 当前将 level1(镇/街道)映射到 street 字段
     expect(res.fields.region).toBe("万博家园居民委员会");
-    expect(res.fields.town).toBe("华漕镇");
+    expect(res.fields.street).toBe("华漕镇");
     expect(res.fields.city).toBeUndefined();
     expect(res.stdAddress).toBe("华漕镇阳光花园16号701室");
     // 评分:居委 3 + 无路无村地标(community)4 + 楼栋 1 + 室 1 = 9
@@ -158,9 +159,9 @@ describe("standardizeService 10 步流水线", () => {
 
     expect(res.fields.subarea).toBe("壹街区");
     expect(res.fields.community).toBe("瑞和雅苑");
-    // 子区域填行政(镇),小区再覆盖(居委+镇)
+    // 子区域填行政(镇),小区再覆盖(居委+镇);regionFieldFor 将 level1 映射到 street
     expect(res.fields.region).toBe("万博家园居民委员会");
-    expect(res.fields.town).toBe("华漕镇");
+    expect(res.fields.street).toBe("华漕镇");
   });
 
   it("cleanFields 逗号拆分:village 后半段兜底给 zhai", async () => {
@@ -222,7 +223,7 @@ describe("standardizeService debug trace", () => {
       "预处理",
       "解析",
       "后清洗",
-      "上下文推断",
+      "基础推断",
       "收尾",
     ]) {
       expect(groupNames).toContain(expected);
@@ -234,7 +235,7 @@ describe("standardizeService debug trace", () => {
       "缓存查找",
       "模型",
       "清洗地址要素",
-      "region 反查",
+      "行政区划匹配",
       "行政去重",
       "拼接标准地址",
       "评分",
@@ -280,7 +281,7 @@ describe("standardizeService debug trace", () => {
     mockRegionTree(regionTree());
 
     const res = await standardizeService.standardize("阳光花园16号701室", { debug: true });
-    const group = res.trace!.find((s) => s.name === "DB 匹配(小区)");
+    const group = res.trace!.find((s) => s.name === "实体匹配");
     expect(group).toBeDefined();
     const matchStep = group!.children?.find((s) => s.name === "小区匹配");
     expect(matchStep).toBeDefined();
@@ -294,7 +295,7 @@ describe("standardizeService debug trace", () => {
     const child = group!.children?.find((s) => s.name === "采用小区自带居委");
     expect(child).toBeDefined();
     expect(child!.fields?.region).toBe("万博家园居民委员会");
-    expect(child!.fields?.town).toBe("华漕镇");
+    expect(child!.fields?.street).toBe("华漕镇");
     expect(child!.fields?.community).toBe("阳光花园");
   });
 });
