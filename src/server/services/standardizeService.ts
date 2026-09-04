@@ -509,8 +509,12 @@ class StandardizeService {
       //   - 小区无 region_id → 走子区域判定:
       //       - 先按源地址 building 精确命中子区域 property.building(matchSubareaByBuilding,归一化 16号→16/A栋→A);
       //     - 未命中再用 ML subarea 名兜底(matchSubarea);
-      //     - 命中子区域 → subarea 也替换为规范名,并采用子区域的 region;
-      //       子区域地址(多个取第一个)经 ML 解析后覆盖路/弄/路号。
+      //   小区本身也有兜底信息(你已保证小区都有 region):
+      //     - 命中小区即采用其 region 填充行政;
+      //     - 小区地址(多个取第一个)经 ML 解析后覆盖路/弄/路号(托底);
+      //   无论小区有无 region,都始终尝试匹配子区域进一步细化;命中子区域 →
+      //   替换规范名、采用子区域 region、并以子区域地址(首个)ML 解析覆盖路/弄/路号
+      //   (子区域更精确,优先于小区地址托底)。
       // 3. 每一步都有独立 trace(楼栋/名称/region 等),日志更细。
 
       // 顺带修复(与你确认的「region + neighborhood 都写」一致): score.ts 读 fields.region 而 DB 行政链只填 neighborhood,导致之前 COM/VIL/SCR 评分少 +1~+3。新增 applyAdminToFields(居委双写)与
@@ -531,7 +535,7 @@ class StandardizeService {
               { alias: { array_contains: communityNormalized } },
             ],
           },
-          select: { id: true, name: true, regionId: true },
+          select: { id: true, name: true, regionId: true, address: true },
           take: 20,
         });
 
@@ -574,11 +578,9 @@ class StandardizeService {
             "match",
           );
 
+          // ② 采用小区自带居委(若 region_id 存在;你已保证小区都有 region)
           if (communityMatch.regionId) {
-            // ② 小区自带 region_id → 它直接归属一个居委,采用该居委
-            const [, admin] = await getRegionAncestors(
-              communityMatch.regionId,
-            );
+            const [, admin] = await getRegionAncestors(communityMatch.regionId);
             applyAdminToFields(res.fields, admin);
             trace(
               "实体匹配",
@@ -591,83 +593,106 @@ class StandardizeService {
               `小区就一个居委,直接采用:${safeString(admin)}`,
               "match",
             );
+          }
+
+          // ③ 小区地址(多个取第一个)经 ML 解析后覆盖路/弄/路号(托底)
+          const communityAddr = parseAddressEntries(communityMatch.address)[0];
+          if (communityAddr) {
+            const parsed = await mlParse(preprocessRaw(communityAddr));
+            if (parsed.road) res.fields.road = parsed.road;
+            if (parsed.lane) res.fields.lane = parsed.lane;
+            if (parsed.road_number) res.fields.road_number = parsed.road_number;
+            trace(
+              "实体匹配",
+              "小区地址覆盖",
+              {
+                community: matchedCommunityName,
+                address: communityAddr,
+              },
+              {
+                road: parsed.road ?? undefined,
+                lane: parsed.lane ?? undefined,
+                road_number: parsed.road_number ?? undefined,
+              },
+              `小区地址「${communityAddr}」ML 解析 → 路/弄/路号:${parsed.road ?? ""}/${parsed.lane ?? ""}/${parsed.road_number ?? ""}`,
+              "match",
+            );
+          }
+
+          // ④ 始终匹配子区域(楼栋范围优先,ML 子区域名兜底),进一步细化居委/地址
+          let subareaMatch: {
+            id: string;
+            name: string;
+            regionId: string | null;
+            address: unknown;
+          } | null = null;
+          let subareaBy: "building" | "name" | null = null;
+
+          // 楼栋范围优先(源地址 building 精确命中子区域 property.building)
+          if (res.fields.building) {
+            subareaMatch = await matchSubareaByBuilding(
+              communityMatch.id,
+              res.fields.building,
+            );
+            subareaBy = subareaMatch ? "building" : null;
+          }
+          // 楼栋未命中 → 用 ML 子区域名兜底(名称/别名)
+          if (!subareaMatch && res.fields.subarea) {
+            subareaMatch = await matchSubarea(
+              res.fields.subarea,
+              communityMatch.id,
+            );
+            subareaBy = subareaMatch ? "name" : null;
+          }
+
+          // 命中后规范名替换 subarea 并采用子区域 region(一次日志覆盖命中/改名/居委)
+          if (subareaMatch) {
+            const renamed = res.fields.subarea !== subareaMatch.name;
+            if (renamed) res.fields.subarea = subareaMatch.name;
+            let subAdmin: AdminFields = {};
+            if (subareaMatch.regionId) {
+              [, subAdmin] = await getRegionAncestors(subareaMatch.regionId);
+              applyAdminToFields(res.fields, subAdmin);
+            }
+            // 子区域地址(多个取第一个)经 ML 解析后,覆盖路/弄/路号(子区域更精确,覆盖小区地址托底)
+            const subAddr = parseAddressEntries(subareaMatch.address)[0];
+            if (subAddr) {
+              const parsed = await mlParse(preprocessRaw(subAddr));
+              if (parsed.road) res.fields.road = parsed.road;
+              if (parsed.lane) res.fields.lane = parsed.lane;
+              if (parsed.road_number) res.fields.road_number = parsed.road_number;
+            }
+            const method = subareaBy === "building" ? "楼栋范围" : "名称";
+            trace(
+              "实体匹配",
+              "子区域判定",
+              {
+                community: matchedCommunityName,
+                building: res.fields.building,
+                subarea: res.fields.subarea,
+              },
+              Object.keys(subAdmin).length > 0 ? subAdmin : undefined,
+              `子区域「${method} ${res.fields.building}」命中「${subareaMatch.name}」`
+                + (renamed ? "(名已更新)" : "")
+                + (subareaMatch.regionId
+                  ? `,采用其 region:${safeString(subAdmin)}`
+                  : ",无 region_id 无法填充居委")
+                + (subAddr ? `,路弄号采用子区域地址「${subAddr}」` : ""),
+              "match",
+            );
           } else {
-            // ③ 小区无 region_id → 说明小区有子区域,每个子区域有楼栋范围:
-            //    用源地址楼栋数据找子区域,进而用子区域的 region
-            let subareaMatch: {
-              id: string;
-              name: string;
-              regionId: string | null;
-              address: unknown;
-            } | null = null;
-            let subareaBy: "building" | "name" | null = null;
-
-            // 楼栋范围优先(源地址 building 精确命中子区域 property.building)
-            if (res.fields.building) {
-              subareaMatch = await matchSubareaByBuilding(
-                communityMatch.id,
-                res.fields.building,
-              );
-              subareaBy = subareaMatch ? "building" : null;
-            }
-            // 楼栋未命中 → 用 ML 子区域名兜底(名称/别名)
-            if (!subareaMatch && res.fields.subarea) {
-              subareaMatch = await matchSubarea(
-                res.fields.subarea,
-                communityMatch.id,
-              );
-              subareaBy = subareaMatch ? "name" : null;
-            }
-
-            // 命中后规范名替换 subarea 并采用子区域 region(一次日志覆盖命中/改名/居委)
-            if (subareaMatch) {
-              const renamed = res.fields.subarea !== subareaMatch.name;
-              if (renamed) res.fields.subarea = subareaMatch.name;
-              let subAdmin: AdminFields = {};
-              if (subareaMatch.regionId) {
-                [, subAdmin] = await getRegionAncestors(subareaMatch.regionId);
-                applyAdminToFields(res.fields, subAdmin);
-              }
-              // 子区域地址(多个取第一个)经 ML 解析后,覆盖路/弄/路号
-              const subAddr = parseAddressEntries(subareaMatch.address)[0];
-              if (subAddr) {
-                const parsed = await mlParse(preprocessRaw(subAddr));
-                if (parsed.road) res.fields.road = parsed.road;
-                if (parsed.lane) res.fields.lane = parsed.lane;
-                if (parsed.road_number) res.fields.road_number = parsed.road_number;
-              }
-              const method = subareaBy === "building" ? "楼栋范围" : "名称";
-              trace(
-                "实体匹配",
-                "子区域判定",
-                {
-                  community: matchedCommunityName,
-                  building: res.fields.building,
-                  subarea: res.fields.subarea,
-                },
-                Object.keys(subAdmin).length > 0 ? subAdmin : undefined,
-                `子区域「${method} ${res.fields.building}」命中「${subareaMatch.name}」`
-                  + (renamed ? "(名已更新)" : "")
-                  + (subareaMatch.regionId
-                    ? `,采用其 region:${safeString(subAdmin)}`
-                    : ",无 region_id 无法填充居委")
-                  + (subAddr ? `,路弄号采用子区域地址「${subAddr}」` : ""),
-                "match",
-              );
-            } else {
-              trace(
-                "实体匹配",
-                "子区域判定",
-                {
-                  community: matchedCommunityName,
-                  building: res.fields.building,
-                  subarea: res.fields.subarea,
-                },
-                undefined,
-                "小区无 region_id,且楼栋/名称均未命中子区域 → 无法确定居委",
-                "skip",
-              );
-            }
+            trace(
+              "实体匹配",
+              "子区域判定",
+              {
+                community: matchedCommunityName,
+                building: res.fields.building,
+                subarea: res.fields.subarea,
+              },
+              undefined,
+              "楼栋/名称均未命中子区域 → 沿用小区信息(托底)",
+              "skip",
+            );
           }
         }
       }

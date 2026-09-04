@@ -209,6 +209,75 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.fields.lane).toBe("88弄");
   });
 
+  it("小区有 region + 小区地址:采用小区地址(ML 解析)覆盖路/弄/路号(托底)", async () => {
+    // 主地址 ML 给 路=永跃路;小区地址「浦星公路500号」ML 解析给 路=浦星公路/号=500号
+    dbMock.community.findMany.mockResolvedValue([
+      { id: "c1", name: "阳光花园", regionId: "1254", address: [{ value: "浦星公路500号" }] },
+    ]);
+    mockRegionTree(regionTree());
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : "";
+      const addr = decodeURIComponent(url.split("address=")[1] ?? "");
+      if (addr.includes("浦星公路")) {
+        return {
+          ok: true,
+          json: async () => ({ code: 0, data: { road: "浦星公路", road_number: "500号" } }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: { community: "阳光花园", building: "16号", room: "701室", road: "永跃路" },
+        }),
+      } as Response;
+    });
+
+    const res = await standardizeService.standardize("阳光花园16号701室");
+
+    // 小区无子区域命中 → 沿用小区信息:region 来自小区,路弄号来自小区地址
+    expect(res.fields.region).toBe("万博家园居民委员会");
+    expect(res.fields.street).toBe("华漕镇");
+    expect(res.fields.road).toBe("浦星公路"); // 小区地址覆盖主地址路
+    expect(res.fields.road_number).toBe("500号");
+  });
+
+  it("小区有 region 也始终匹配子区域:子区域地址覆盖小区地址(子区域更精确)", async () => {
+    dbMock.community.findMany.mockResolvedValue([
+      { id: "c2", name: "瑞和雅苑", regionId: "1254", address: [{ value: "浦星公路500号" }] },
+    ]);
+    dbMock.subarea.findMany.mockResolvedValue([
+      {
+        id: "s1",
+        name: "壹街区",
+        regionId: "310112106",
+        property: { building: ["16"] },
+        address: [{ value: "银康路88弄" }],
+      },
+    ]);
+    mockRegionTree(regionTree());
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : "";
+      const addr = decodeURIComponent(url.split("address=")[1] ?? "");
+      if (addr.includes("银康路")) {
+        return { ok: true, json: async () => ({ code: 0, data: { road: "银康路", lane: "88弄" } }) } as Response;
+      }
+      if (addr.includes("浦星公路")) {
+        return { ok: true, json: async () => ({ code: 0, data: { road: "浦星公路", road_number: "500号" } }) } as Response;
+      }
+      return { ok: true, json: async () => ({ code: 0, data: { community: "瑞和雅苑", building: "16号", road: "永跃路" } }) } as Response;
+    });
+
+    const res = await standardizeService.standardize("瑞和雅苑16号701室");
+
+    // 小区有 region,但仍匹配到子区域;子区域地址(银康路88弄)覆盖小区地址(浦星公路500号)
+    expect(res.fields.region).toBe("万博家园居民委员会"); // 小区居委保留
+    expect(res.fields.street).toBe("华漕镇");
+    expect(res.fields.subarea).toBe("壹街区");
+    expect(res.fields.road).toBe("银康路"); // 子区域地址优先
+    expect(res.fields.lane).toBe("88弄");
+  });
+
   it("cleanFields 逗号拆分:village 后半段兜底给 zhai", async () => {
     mlOk({ village: "革新村,徐家宅", team: "十队", group: "五组" });
     dbMock.village.findMany.mockResolvedValue([]);

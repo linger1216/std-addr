@@ -23,7 +23,7 @@ const dbMock = vi.hoisted(() => ({
   community: { findMany: vi.fn() },
   poi: { findMany: vi.fn() },
   village: { findMany: vi.fn() },
-  subarea: { findFirst: vi.fn() },
+  subarea: { findFirst: vi.fn(), findMany: vi.fn() },
   sysSetting: { findMany: vi.fn() },
 }));
 
@@ -545,6 +545,7 @@ beforeEach(() => {
   dbMock.poi.findMany.mockReset().mockResolvedValue([]);
   dbMock.village.findMany.mockReset().mockResolvedValue([]);
   dbMock.subarea.findFirst.mockReset().mockResolvedValue(null);
+  dbMock.subarea.findMany.mockReset().mockResolvedValue([]);
   dbMock.sysSetting.findMany.mockReset().mockResolvedValue([]);
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
