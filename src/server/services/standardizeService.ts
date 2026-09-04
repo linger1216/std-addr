@@ -597,81 +597,51 @@ class StandardizeService {
               name: string;
               regionId: string | null;
             } | null = null;
+            let subareaBy: "building" | "name" | null = null;
 
-            // 3.1 楼栋范围优先(源地址 building 精确命中 property.building)
+            // 楼栋范围优先(源地址 building 精确命中子区域 property.building)
             if (res.fields.building) {
               subareaMatch = await matchSubareaByBuilding(
                 communityMatch.id,
                 res.fields.building,
               );
-              trace(
-                "实体匹配",
-                "子区域·楼栋范围",
-                {
-                  community: matchedCommunityName,
-                  building: res.fields.building,
-                },
-                subareaMatch?.name,
-                subareaMatch
-                  ? `楼栋「${res.fields.building}」命中子区域「${subareaMatch.name}」`
-                  : `楼栋「${res.fields.building}」不在任何子区域楼栋范围`,
-                subareaMatch ? "match" : "skip",
-              );
+              subareaBy = subareaMatch ? "building" : null;
             }
-
-            // 3.2 楼栋未命中 → 用 ML 子区域名兜底(名称/别名)
+            // 楼栋未命中 → 用 ML 子区域名兜底(名称/别名)
             if (!subareaMatch && res.fields.subarea) {
-              const nameMatch = await matchSubarea(
+              subareaMatch = await matchSubarea(
                 res.fields.subarea,
                 communityMatch.id,
               );
-              trace(
-                "实体匹配",
-                "子区域·名称兜底",
-                {
-                  community: matchedCommunityName,
-                  subarea: res.fields.subarea,
-                },
-                nameMatch?.name,
-                nameMatch
-                  ? `子区域名「${res.fields.subarea}」命中「${nameMatch.name}」`
-                  : `子区域名「${res.fields.subarea}」未命中`,
-                nameMatch ? "match" : "skip",
-              );
-              subareaMatch = nameMatch;
+              subareaBy = subareaMatch ? "name" : null;
             }
 
+            // 命中后规范名替换 subarea 并采用子区域 region(一次日志覆盖命中/改名/居委)
             if (subareaMatch) {
-              // 命中子区域 → 规范名替换 subarea + 采用子区域 region
-              if (res.fields.subarea !== subareaMatch.name) {
-                res.fields.subarea = subareaMatch.name;
-              }
+              const renamed = res.fields.subarea !== subareaMatch.name;
+              if (renamed) res.fields.subarea = subareaMatch.name;
+              let subAdmin: AdminFields = {};
               if (subareaMatch.regionId) {
-                const [, subAdmin] = await getRegionAncestors(
-                  subareaMatch.regionId,
-                );
+                [, subAdmin] = await getRegionAncestors(subareaMatch.regionId);
                 applyAdminToFields(res.fields, subAdmin);
-                trace(
-                  "实体匹配",
-                  "子区域→region",
-                  {
-                    subarea: subareaMatch.name,
-                    regionId: subareaMatch.regionId,
-                  },
-                  subAdmin,
-                  `子区域「${subareaMatch.name}」命中 → 采用其 region:${safeString(subAdmin)}`,
-                  "match",
-                );
-              } else {
-                trace(
-                  "实体匹配",
-                  "子区域→region",
-                  { subarea: subareaMatch.name },
-                  undefined,
-                  `子区域「${subareaMatch.name}」命中但无 region_id,无法填充居委`,
-                  "skip",
-                );
               }
+              const method = subareaBy === "building" ? "楼栋范围" : "名称";
+              trace(
+                "实体匹配",
+                "子区域判定",
+                {
+                  community: matchedCommunityName,
+                  building: res.fields.building,
+                  subarea: res.fields.subarea,
+                },
+                Object.keys(subAdmin).length > 0 ? subAdmin : undefined,
+                `子区域[${method}]命中「${subareaMatch.name}」`
+                  + (renamed ? "(规范名已更新)" : "")
+                  + (subareaMatch.regionId
+                    ? `,采用其 region:${safeString(subAdmin)}`
+                    : ",无 region_id 无法填充居委"),
+                "match",
+              );
             } else {
               trace(
                 "实体匹配",
