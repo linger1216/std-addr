@@ -11,6 +11,7 @@
  *  - Redis 缓存:降级为进程内 LRU
  */
 import { db } from "@/server/db";
+import { parseAddressEntries } from "@/lib/format";
 import {
   preprocessRaw,
   normalizeChineseDigit,
@@ -204,7 +205,7 @@ function syncNeighborhoodRegion(fields: StdFields): void {
 async function matchSubarea(
   keyword: string,
   parentId: string,
-): Promise<{ id: string; name: string; regionId: string | null } | null> {
+): Promise<{ id: string; name: string; regionId: string | null; address: unknown } | null> {
   if (!keyword || !parentId) return null;
   const sub = await db.subarea.findFirst({
     where: {
@@ -216,7 +217,7 @@ async function matchSubarea(
         { alias: { array_contains: keyword } },
       ],
     },
-    select: { id: true, name: true, regionId: true },
+    select: { id: true, name: true, regionId: true, address: true },
   });
   return sub;
 }
@@ -236,7 +237,7 @@ function normalizeBuildingKey(value: unknown): string {
 async function matchSubareaByBuilding(
   communityId: string,
   building: unknown,
-): Promise<{ id: string; name: string; regionId: string | null } | null> {
+): Promise<{ id: string; name: string; regionId: string | null; address: unknown } | null> {
   const key = normalizeBuildingKey(building);
   if (!key) return null;
   const subs = await db.subarea.findMany({
@@ -245,14 +246,14 @@ async function matchSubareaByBuilding(
       entityId: communityId,
       status: 1,
     },
-    select: { id: true, name: true, regionId: true, property: true },
+    select: { id: true, name: true, regionId: true, property: true, address: true },
     take: 50,
   });
   for (const s of subs) {
     const prop = s.property as { building?: unknown } | null;
     const list = Array.isArray(prop?.building) ? prop.building : [];
     if (list.some((v) => normalizeBuildingKey(v) === key)) {
-      return { id: s.id, name: s.name, regionId: s.regionId };
+      return { id: s.id, name: s.name, regionId: s.regionId, address: s.address };
     }
   }
   return null;
@@ -508,7 +509,8 @@ class StandardizeService {
       //   - 小区无 region_id → 走子区域判定:
       //       - 先按源地址 building 精确命中子区域 property.building(matchSubareaByBuilding,归一化 16号→16/A栋→A);
       //     - 未命中再用 ML subarea 名兜底(matchSubarea);
-      //     - 命中子区域 → subarea 也替换为规范名,并采用子区域的 region。
+      //     - 命中子区域 → subarea 也替换为规范名,并采用子区域的 region;
+      //       子区域地址(多个取第一个)经 ML 解析后覆盖路/弄/路号。
       // 3. 每一步都有独立 trace(楼栋/名称/region 等),日志更细。
 
       // 顺带修复(与你确认的「region + neighborhood 都写」一致): score.ts 读 fields.region 而 DB 行政链只填 neighborhood,导致之前 COM/VIL/SCR 评分少 +1~+3。新增 applyAdminToFields(居委双写)与
@@ -596,6 +598,7 @@ class StandardizeService {
               id: string;
               name: string;
               regionId: string | null;
+              address: unknown;
             } | null = null;
             let subareaBy: "building" | "name" | null = null;
 
@@ -625,6 +628,14 @@ class StandardizeService {
                 [, subAdmin] = await getRegionAncestors(subareaMatch.regionId);
                 applyAdminToFields(res.fields, subAdmin);
               }
+              // 子区域地址(多个取第一个)经 ML 解析后,覆盖路/弄/路号
+              const subAddr = parseAddressEntries(subareaMatch.address)[0];
+              if (subAddr) {
+                const parsed = await mlParse(preprocessRaw(subAddr));
+                if (parsed.road) res.fields.road = parsed.road;
+                if (parsed.lane) res.fields.lane = parsed.lane;
+                if (parsed.road_number) res.fields.road_number = parsed.road_number;
+              }
               const method = subareaBy === "building" ? "楼栋范围" : "名称";
               trace(
                 "实体匹配",
@@ -635,11 +646,12 @@ class StandardizeService {
                   subarea: res.fields.subarea,
                 },
                 Object.keys(subAdmin).length > 0 ? subAdmin : undefined,
-                `子区域[${method}]命中「${subareaMatch.name}」`
-                  + (renamed ? "(规范名已更新)" : "")
+                `子区域「${method} ${res.fields.building}」命中「${subareaMatch.name}」`
+                  + (renamed ? "(名已更新)" : "")
                   + (subareaMatch.regionId
                     ? `,采用其 region:${safeString(subAdmin)}`
-                    : ",无 region_id 无法填充居委"),
+                    : ",无 region_id 无法填充居委")
+                  + (subAddr ? `,路弄号采用子区域地址「${subAddr}」` : ""),
                 "match",
               );
             } else {

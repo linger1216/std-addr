@@ -66,6 +66,7 @@ export function formatJson(v: unknown): string {
  *  - string              → [string]
  *  - array               → 递归展平每个元素,只保留 string
  *  - number / boolean    → [String(v)]
+ *  - { value: string }   → [value](地址条目对象,如子区域地址 [{ value: "..." }])
  *  - object / 其他       → []
  */
 export function normalizeAddress(value: unknown): string[] {
@@ -77,6 +78,12 @@ export function normalizeAddress(value: unknown): string[] {
     );
   }
   if (typeof value === "number" || typeof value === "boolean") return [String(value)];
+  // 地址条目对象(如子区域 address:[{ value: "..." }])→ 取 value
+  if (typeof value === "object") {
+    const v = (value as Record<string, unknown>).value;
+    if (typeof v === "string" && v) return [v];
+    return [];
+  }
   return [];
 }
 

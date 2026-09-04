@@ -29,7 +29,7 @@ const dbMock = vi.hoisted(() => ({
   community: { findMany: vi.fn() },
   poi: { findMany: vi.fn() },
   village: { findMany: vi.fn() },
-  subarea: { findFirst: vi.fn() },
+  subarea: { findFirst: vi.fn(), findMany: vi.fn() },
   sysSetting: { findMany: vi.fn() },
 }));
 
@@ -74,6 +74,7 @@ beforeEach(() => {
   dbMock.poi.findMany.mockReset().mockResolvedValue([]);
   dbMock.village.findMany.mockReset().mockResolvedValue([]);
   dbMock.subarea.findFirst.mockReset().mockResolvedValue(null);
+  dbMock.subarea.findMany.mockReset().mockResolvedValue([]);
   dbMock.sysSetting.findMany.mockReset().mockResolvedValue([]);
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -162,6 +163,50 @@ describe("standardizeService 10 步流水线", () => {
     // 子区域填行政(镇),小区再覆盖(居委+镇);regionFieldFor 将 level1 映射到 street
     expect(res.fields.region).toBe("万博家园居民委员会");
     expect(res.fields.street).toBe("华漕镇");
+  });
+
+  it("子区域命中:采用子区域地址(ML 解析)覆盖路/弄/路号", async () => {
+    // 小区无 region_id → 走子区域判定;楼栋 16号 精确命中子区域 property.building
+    dbMock.community.findMany.mockResolvedValue([
+      { id: "c2", name: "瑞和雅苑", regionId: null },
+    ]);
+    dbMock.subarea.findMany.mockResolvedValue([
+      {
+        id: "s1",
+        name: "壹街区",
+        regionId: "310112106",
+        property: { building: ["16"] },
+        address: [{ value: "银康路88弄" }],
+      },
+    ]);
+    mockRegionTree(regionTree());
+
+    // 主地址 ML 给 路=永跃路;子区域地址「银康路88弄」ML 解析给 路=银康路/弄=88弄
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : "";
+      const addr = decodeURIComponent(url.split("address=")[1] ?? "");
+      if (addr.includes("银康路")) {
+        return {
+          ok: true,
+          json: async () => ({ code: 0, data: { road: "银康路", lane: "88弄" } }),
+        } as Response;
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: { community: "瑞和雅苑", building: "16号", road: "永跃路" },
+        }),
+      } as Response;
+    });
+
+    const res = await standardizeService.standardize("瑞和雅苑16号701室");
+
+    expect(res.fields.subarea).toBe("壹街区");
+    expect(res.fields.street).toBe("华漕镇");
+    // 原路/弄被子区域地址覆盖
+    expect(res.fields.road).toBe("银康路");
+    expect(res.fields.lane).toBe("88弄");
   });
 
   it("cleanFields 逗号拆分:village 后半段兜底给 zhai", async () => {
