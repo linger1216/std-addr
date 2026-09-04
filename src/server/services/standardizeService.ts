@@ -404,9 +404,10 @@ class StandardizeService {
    */
   async standardize(
     rawAddress: string,
-    opts?: { debug?: boolean },
+    opts?: { debug?: boolean; force?: boolean },
   ): Promise<StandardizeResult & { trace?: StandardizeStep[] }> {
     const debug = opts?.debug ?? false;
+    const force = opts?.force ?? false;
     const steps: StandardizeStep[] = [];
 
     const res: StandardizeResult = {
@@ -452,8 +453,15 @@ class StandardizeService {
     trace("预处理", "清洗",  rawAddress, cleanedAddress);
 
     // ====== 1.5 缓存命中 ======
-    if (debug) {
-      trace("预处理", "缓存查找", cleanedAddress, cleanedAddress, "调试模式忽略缓存", "skip");
+    if (debug || force) {
+      trace(
+        "预处理",
+        "缓存查找",
+        cleanedAddress,
+        cleanedAddress,
+        force ? "强制刷新(force):忽略缓存" : "调试模式忽略缓存",
+        "skip",
+      );
     } else {
       const cached = cache.get(`std:${cleanedAddress}`);
       if (cached) return { ...cached, rawAddress };
@@ -807,15 +815,18 @@ class StandardizeService {
       trace("收尾", "评分", res.fields, res.stdScore);
 
       // ====== 10. 缓存写入 ======
-      if (cleanedAddress) cache.set(`std:${cleanedAddress}`, res);
-      trace(
-        "收尾",
-        "缓存写入",
-        null,
-        `std:${cleanedAddress}`,
-        "进程内 LRU 缓存",
-        "skip",
-      );
+      // 始终写入(即便 debug / force:debug 不跳过写,force 跳过读但写)
+      if (cleanedAddress) {
+        cache.set(`std:${cleanedAddress}`, res);
+        trace(
+          "收尾",
+          "缓存写入",
+          null,
+          `std:${cleanedAddress}`,
+          "进程内 LRU 缓存写入",
+          "ok",
+        );
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       if (debug) {

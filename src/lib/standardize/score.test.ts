@@ -10,7 +10,7 @@ describe("buildStdAddress 标准地址拼接", () => {
       street: "七宝镇", road: "永跃路", lane: "260弄", road_number: "38号",
       building: "5号", room: "502室",
     });
-    // 注:building 末尾带"号"才被 replace(/号$/) 规整;模型输出的 "5号楼" 形态保持旧行为(5号楼号)
+    // 注:building 已含"号"则保持 "5号"(不重复补号);模型输出的 "5号楼" 形态拼接为 "5号楼"(不再补 号楼号)
     expect(s).toBe("上海市闵行区七宝镇永跃路260弄38号5号502室");
   });
 

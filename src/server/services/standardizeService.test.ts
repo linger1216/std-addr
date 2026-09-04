@@ -322,6 +322,26 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.stdScore).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("楼栋已带楼后缀:拼接不重复补号(16号楼 → 16号楼,非16号楼号)", async () => {
+    mlOk({ road: "七莘路", lane: "3128弄", building: "16号楼", room: "403室" });
+    const res = await standardizeService.standardize("七莘路3128弄16号楼403室");
+    // 楼栋已含「楼」,拼接不应再补「号」(避免 16号楼号)
+    expect(res.stdAddress).toBe("七莘路3128弄16号楼403室");
+  });
+
+  it("force=true:跳过缓存命中重新解析,但仍写缓存", async () => {
+    mlOk({ road: "永跃路", road_number: "260号" });
+    // 第一次(非 debug)→ 计算并写缓存
+    await standardizeService.standardize("永跃路260号");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // 第二次 force=true → 忽略缓存读取,重新调 ML
+    await standardizeService.standardize("永跃路260号", { force: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 第三次(非 debug)→ 命中 force 写入的缓存,不再调 ML
+    await standardizeService.standardize("永跃路260号");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("standardizeService debug trace", () => {

@@ -147,12 +147,14 @@ export const stdAddressRouter = createTRPCRouter({
       z.object({
         rawAddress: z.string().trim().min(1).max(500),
         debug: z.boolean().optional(),
+        force: z.boolean().optional(),
       }),
     )
     .mutation(async ({ input }) => {
       try {
         const result = await standardizeService.standardize(input.rawAddress, {
           debug: input.debug,
+          force: input.force,
         });
         return { ok: true, ...result };
       } catch (err) {

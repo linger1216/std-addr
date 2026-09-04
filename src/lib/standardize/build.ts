@@ -109,7 +109,11 @@ export function buildStdAddress(fields: StdFields): string {
 
   // 楼栋房间
   const buildingParts: string[] = [];
-  if (fields.building) buildingParts.push(`${fields.building.replace(/号$/, "")}号`);
+  if (fields.building) {
+    const b = fields.building;
+    // 已含楼/栋/幢/座后缀则不重复补号(避免 16号楼 → 16号楼号);否则去尾号后补号(5号 → 5号)
+    buildingParts.push(/[楼栋幢座]$/.test(b) ? b : `${b.replace(/号$/, "")}号`);
+  }
   if (fields.unit) buildingParts.push(`${fields.unit.replace(/单元$/, "")}单元`);
   if (fields.floor) buildingParts.push(`${fields.floor.replace(/层$/, "")}层`);
   if (fields.room) {
