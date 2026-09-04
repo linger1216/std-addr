@@ -188,7 +188,7 @@ describe("standardizeService 10 步流水线", () => {
       if (addr.includes("银康路")) {
         return {
           ok: true,
-          json: async () => ({ code: 0, data: { road: "银康路", lane: "88弄" } }),
+          json: async () => ({ code: 0, data: { road: "银康路", lane: "88弄", sub_lane: "甲支弄" } }),
         } as Response;
       }
       return {
@@ -207,6 +207,7 @@ describe("standardizeService 10 步流水线", () => {
     // 原路/弄被子区域地址覆盖
     expect(res.fields.road).toBe("银康路");
     expect(res.fields.lane).toBe("88弄");
+    expect(res.fields.sub_lane).toBe("甲支弄"); // 支弄一并覆盖
   });
 
   it("小区有 region + 小区地址:采用小区地址(ML 解析)覆盖路/弄/路号(托底)", async () => {
@@ -221,7 +222,7 @@ describe("standardizeService 10 步流水线", () => {
       if (addr.includes("浦星公路")) {
         return {
           ok: true,
-          json: async () => ({ code: 0, data: { road: "浦星公路", road_number: "500号" } }),
+          json: async () => ({ code: 0, data: { road: "浦星公路", road_number: "500号", sub_lane: "乙支弄" } }),
         } as Response;
       }
       return {
@@ -240,6 +241,7 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.fields.street).toBe("华漕镇");
     expect(res.fields.road).toBe("浦星公路"); // 小区地址覆盖主地址路
     expect(res.fields.road_number).toBe("500号");
+    expect(res.fields.sub_lane).toBe("乙支弄"); // 支弄一并覆盖(托底)
   });
 
   it("小区有 region 也始终匹配子区域:子区域地址覆盖小区地址(子区域更精确)", async () => {
@@ -260,10 +262,10 @@ describe("standardizeService 10 步流水线", () => {
       const url = typeof input === "string" ? input : "";
       const addr = decodeURIComponent(url.split("address=")[1] ?? "");
       if (addr.includes("银康路")) {
-        return { ok: true, json: async () => ({ code: 0, data: { road: "银康路", lane: "88弄" } }) } as Response;
+        return { ok: true, json: async () => ({ code: 0, data: { road: "银康路", lane: "88弄", sub_lane: "甲支弄" } }) } as Response;
       }
       if (addr.includes("浦星公路")) {
-        return { ok: true, json: async () => ({ code: 0, data: { road: "浦星公路", road_number: "500号" } }) } as Response;
+        return { ok: true, json: async () => ({ code: 0, data: { road: "浦星公路", road_number: "500号", sub_lane: "乙支弄" } }) } as Response;
       }
       return { ok: true, json: async () => ({ code: 0, data: { community: "瑞和雅苑", building: "16号", road: "永跃路" } }) } as Response;
     });
@@ -276,6 +278,7 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.fields.subarea).toBe("壹街区");
     expect(res.fields.road).toBe("银康路"); // 子区域地址优先
     expect(res.fields.lane).toBe("88弄");
+    expect(res.fields.sub_lane).toBe("甲支弄"); // 子区域支弄覆盖小区支弄(乙支弄)
   });
 
   it("cleanFields 逗号拆分:village 后半段兜底给 zhai", async () => {

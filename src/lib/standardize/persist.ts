@@ -40,6 +40,8 @@ const COLUMN_SOURCES: Array<[string, keyof StdFields]> = [
   ["expressway", "expressway"],
   ["highway", "highway"],
   ["locationType", "locationType"],
+  // 表列 region ← 流水线居委(居民委员会/村民委员会)
+  ["region", "region"],
 ];
 
 /** 只返回全部 27 列;空值统一归一为 null(覆盖式写库,不留旧值) */

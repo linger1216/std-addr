@@ -336,6 +336,8 @@ model StdAddress {
     expressway  String?  @map("expressway")
     highway     String?  @map("highway")
     locationType String? @map("location_type")
+    // 居村委(居民委员会/村民委员会;标准化流水线填充,评分 +3)
+    region      String? @map("region")
     // 状态:1 启用 / 0 禁用
     status      Int      @default(1)
     createdAt   DateTime @default(now()) @map("created_at")

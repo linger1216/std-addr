@@ -37,7 +37,12 @@ describe("mapFieldsToPersist 标准化字段 → 表列名", () => {
     expect(out.district).toBeNull();
     expect(out.roadNumber).toBeNull();
     expect(out.groupField).toBeNull();
-    expect(Object.entries(out)).toHaveLength(26);
+    expect(Object.entries(out)).toHaveLength(27);
+  });
+
+  it("居村委:fields.region → 写 region 列", () => {
+    const out = mapFieldsToPersist({ region: "万博家园居民委员会" });
+    expect(out.region).toBe("万博家园居民委员会");
   });
 
   it("值去除首尾空白后写库", () => {

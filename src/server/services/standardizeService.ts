@@ -601,6 +601,7 @@ class StandardizeService {
             const parsed = await mlParse(preprocessRaw(communityAddr));
             if (parsed.road) res.fields.road = parsed.road;
             if (parsed.lane) res.fields.lane = parsed.lane;
+            if (parsed.sub_lane) res.fields.sub_lane = parsed.sub_lane; // 支弄
             if (parsed.road_number) res.fields.road_number = parsed.road_number;
             trace(
               "实体匹配",
@@ -612,9 +613,10 @@ class StandardizeService {
               {
                 road: parsed.road ?? undefined,
                 lane: parsed.lane ?? undefined,
+                sub_lane: parsed.sub_lane ?? undefined,
                 road_number: parsed.road_number ?? undefined,
               },
-              `小区地址「${communityAddr}」ML 解析 → 路/弄/路号:${parsed.road ?? ""}/${parsed.lane ?? ""}/${parsed.road_number ?? ""}`,
+              `小区地址「${communityAddr}」ML 解析 → 路/弄/支弄/路号:${parsed.road ?? ""}/${parsed.lane ?? ""}/${parsed.sub_lane ?? ""}/${parsed.road_number ?? ""}`,
               "match",
             );
           }
@@ -654,12 +656,13 @@ class StandardizeService {
               [, subAdmin] = await getRegionAncestors(subareaMatch.regionId);
               applyAdminToFields(res.fields, subAdmin);
             }
-            // 子区域地址(多个取第一个)经 ML 解析后,覆盖路/弄/路号(子区域更精确,覆盖小区地址托底)
+            // 子区域地址(多个取第一个)经 ML 解析后,覆盖路/弄/支弄/路号(子区域更精确,覆盖小区地址托底)
             const subAddr = parseAddressEntries(subareaMatch.address)[0];
             if (subAddr) {
               const parsed = await mlParse(preprocessRaw(subAddr));
               if (parsed.road) res.fields.road = parsed.road;
               if (parsed.lane) res.fields.lane = parsed.lane;
+              if (parsed.sub_lane) res.fields.sub_lane = parsed.sub_lane; // 支弄
               if (parsed.road_number) res.fields.road_number = parsed.road_number;
             }
             const method = subareaBy === "building" ? "楼栋范围" : "名称";
