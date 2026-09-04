@@ -41,7 +41,7 @@ const LABELS: Record<StdAddressFieldKey, string> = {
   locationType: "位置类型",
   poi: "兴趣点",
   other: "其他",
-  region: "居村委",
+  neighborhood: "居村委",
 };
 
 /** 27 个地址要素:[表字段名, 中文标签](顺序即展示顺序) */

@@ -35,7 +35,7 @@ export const STD_ADDRESS_FIELD_KEYS = [
   "locationType",
   "poi",
   "other",
-  "region",
+  "neighborhood",
 ] as const;
 
 export type StdAddressFieldKey = (typeof STD_ADDRESS_FIELD_KEYS)[number];

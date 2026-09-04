@@ -40,9 +40,9 @@ describe("mapFieldsToPersist 标准化字段 → 表列名", () => {
     expect(Object.entries(out)).toHaveLength(27);
   });
 
-  it("居村委:fields.region → 写 region 列", () => {
-    const out = mapFieldsToPersist({ region: "万博家园居民委员会" });
-    expect(out.region).toBe("万博家园居民委员会");
+  it("居村委:fields.neighborhood → 写 neighborhood 列", () => {
+    const out = mapFieldsToPersist({ neighborhood: "万博家园居民委员会" });
+    expect(out.neighborhood).toBe("万博家园居民委员会");
   });
 
   it("值去除首尾空白后写库", () => {
