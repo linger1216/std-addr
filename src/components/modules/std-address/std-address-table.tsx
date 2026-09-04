@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ScoreText } from "@/components/ui/score-text";
 import {
   Table,
   TableBody,
@@ -94,7 +95,7 @@ export function createStdAddressColumns() {
     }),
     columnHelper.accessor("stdScore", {
       header: () => <div className="text-center">评分</div>,
-      cell: (info) => <ScoreCell value={info.getValue()} />,
+      cell: (info) => <ScoreText value={info.getValue()} />,
       meta: { className: "w-20" },
     }),
     columnHelper.accessor("status", {
@@ -167,20 +168,6 @@ export function createStdAddressColumns() {
       meta: { className: "w-44" },
     }),
   ]);
-}
-
-/** 评分列:Decimal 序列化后可能是 string/number,null 显示占位 */
-function ScoreCell({ value }: { value: unknown }) {
-  if (value === null || value === undefined || value === "") {
-    return (
-      <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>
-    );
-  }
-  const n = Number(value);
-  if (Number.isNaN(n)) {
-    return <span className="text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
-  }
-  return <span className="font-mono text-[12.5px]">{n.toFixed(1)}</span>;
 }
 
 /** 排序状态图标:未排序 → 双向箭头(灰);升/降 → 实心箭头 */

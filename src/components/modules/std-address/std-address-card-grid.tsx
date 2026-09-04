@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
+import { ScoreText } from "@/components/ui/score-text";
+import { orEmpty } from "@/lib/constants";
 import { formatShortDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { STD_ADDRESS_FIELDS } from "./std-address-fields";
@@ -183,7 +184,6 @@ function StdAddressCard({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <StatusBadge status={row.status} />
-          <ScoreText value={row.stdScore} />
         </div>
       </div>
 
@@ -212,9 +212,8 @@ function StdAddressCard({
 
       {/* 底部:创建时间 + 行操作 */}
       <div className="flex items-center justify-between border-t border-border/60 pt-1.5">
-        <span className="text-[11px] text-muted-foreground">
-          {formatShortDate(row.createdAt)}
-        </span>
+
+        <ScoreText value={row.stdScore} />
         <div className="flex items-center gap-0.5">
           <Button
             variant="ghost"
@@ -258,22 +257,3 @@ function StdAddressCard({
   );
 }
 
-/** 评分:Decimal 序列化后可能是 string/number,null 显示占位 */
-function ScoreText({ value }: { value: unknown }) {
-  if (value === null || value === undefined || value === "") {
-    return (
-      <span className="font-mono text-[12px] text-muted-foreground">
-        {PLACEHOLDER_EMPTY}
-      </span>
-    );
-  }
-  const n = Number(value);
-  if (Number.isNaN(n)) {
-    return (
-      <span className="font-mono text-[12px] text-muted-foreground">
-        {PLACEHOLDER_EMPTY}
-      </span>
-    );
-  }
-  return <span className="font-mono text-[12px]">{n.toFixed(1)}</span>;
-}

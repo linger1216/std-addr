@@ -14,8 +14,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ScoreText } from "@/components/ui/score-text";
 import { api } from "@/trpc/react";
-import { orEmpty, PLACEHOLDER_EMPTY } from "@/lib/constants";
+import { orEmpty } from "@/lib/constants";
 import { formatDateTime } from "@/lib/format";
 import { mapFieldsToPersist } from "@/lib/standardize/persist";
 import { STD_ADDRESS_FIELDS } from "./std-address-fields";
@@ -221,14 +222,3 @@ function Section({
   );
 }
 
-/** 评分:Decimal 序列化后可能是 string/number,null 显示占位 */
-function ScoreText({ value }: { value: unknown }) {
-  if (value === null || value === undefined || value === "") {
-    return <span className="font-mono text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
-  }
-  const n = Number(value);
-  if (Number.isNaN(n)) {
-    return <span className="font-mono text-muted-foreground">{PLACEHOLDER_EMPTY}</span>;
-  }
-  return <span className="font-mono">{n.toFixed(1)}</span>;
-}

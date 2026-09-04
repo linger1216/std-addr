@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check, ChevronDown, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
 export type SearchSelectOption<T extends string = string> = {
   value: T;
@@ -32,6 +33,7 @@ export function SearchSelect<T extends string = string>({
   align = "start",
   maxHeight = 288,
   disabled = false,
+  loading = false,
 }: {
   value: T | undefined;
   onValueChange: (v: T) => void;
@@ -44,6 +46,7 @@ export function SearchSelect<T extends string = string>({
   align?: "start" | "end";
   maxHeight?: number;
   disabled?: boolean;
+  loading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -175,12 +178,16 @@ export function SearchSelect<T extends string = string>({
         <span className={cn("truncate", !selected && "text-muted-foreground")}>
           {selected?.label ?? placeholder}
         </span>
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
-            open && "rotate-180",
-          )}
-        />
+        {loading ? (
+          <Spinner className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDown
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform duration-150",
+              open && "rotate-180",
+            )}
+          />
+        )}
       </button>
 
       {/* 浮层:Portal 到 body, fixed 定位在 trigger 正下方,绝不遮盖 */}

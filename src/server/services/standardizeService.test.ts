@@ -91,7 +91,7 @@ describe("standardizeService 10 步流水线", () => {
     const res = await standardizeService.standardize("永跃路260弄38号502室");
 
     expect(res.stdAddress).toBe("永跃路260弄38号5号502室");
-    expect(res.stdScore).toBe(8); // 路2 + 弄2 + 号2 + 楼栋1 + 室1
+    expect(res.stdScore).toBe(5); // 城市小区:路/弄/号/楼栋/室号 5/6 核心 → round(5/6*6)=5(无行政)
     expect(res.fields.room).toBe("502室");
     // ML 只被调用一次,且 URL 带清洗后的地址(中文被 URL 编码,先解码再断言)
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -142,8 +142,8 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.fields.street).toBe("华漕镇");
     expect(res.fields.city).toBeUndefined();
     expect(res.stdAddress).toBe("华漕镇阳光花园16号701室");
-    // 评分:居委 3 + 无路无村地标(community)4 + 楼栋 1 + 室 1 = 9
-    expect(res.stdScore).toBe(9);
+    // 评分:城市小区核心 行政/楼栋/室号 3/6 → round(3/6*6)=3(小区地址覆盖未跑,无路弄号)
+    expect(res.stdScore).toBe(3);
   });
 
   it("community + subarea 双匹配:子区域行政优先,小区行政覆盖", async () => {
@@ -293,7 +293,7 @@ describe("standardizeService 10 步流水线", () => {
     expect(res.fields.team).toBe("10队");
     expect(res.fields.group).toBe("5组");
     expect(res.stdAddress).toBe("革新村徐家宅10队5组");
-    expect(res.stdScore).toBe(5); // 村 3 + 宅/队/组 2
+    expect(res.stdScore).toBe(5); // 农村核心 村 1/3 → round(1/3*6)=2 + 宅/队/组 3 额外 = 5
   });
 
   it("队/组中文数字十位展开:二十一队 → 21队(旧算法缺陷修正)", async () => {

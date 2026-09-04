@@ -33,6 +33,15 @@ const MENUS = [
   },
   { name: "地址模拟", path: "/addr-sim", icon: "waypoints", sort: 4, children: [] },
   {
+    name: "地址场景",
+    path: null,
+    icon: "users",
+    sort: 6,
+    children: [
+      { name: "人房+重复诉件", path: "/complaints", icon: "users-round", sort: 1 },
+    ],
+  },
+  {
     name: "系统管理",
     path: null,
     icon: "settings",

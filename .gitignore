@@ -128,3 +128,6 @@ src/ner/data/
 
 # 标注数据(Label Studio 导出,数据资源不上传)
 src/ner/label/exported/
+
+# 旧架构参考工程(独立 git 仓库,236MB,非本项目代码,不入库)
+stdaddr-service/

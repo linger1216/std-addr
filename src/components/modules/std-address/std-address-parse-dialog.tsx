@@ -58,7 +58,9 @@ export function StdAddressParseDialog({
 
   // 打开时清空上一次输入
   useEffect(() => {
-    if (open) setRawAddress("闵行区七宝镇万泰小区16号楼403室");
+    // 闵行区万泰小区16号楼403室
+    // 闵行区杨家巷村
+    if (open) setRawAddress("闵行区杨家巷村3队七组16号楼403室");
   }, [open]);
 
   function handleParse() {

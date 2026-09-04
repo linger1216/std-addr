@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildStdAddress } from "./build";
-import { calcScore, formatScoreDetail } from "./score";
+import { calcScore, classifyClass, formatScoreDetail } from "./score";
 
 describe("buildStdAddress 标准地址拼接", () => {
   it("城市路弄号:行政去重 + 路弄号", () => {
@@ -44,48 +44,101 @@ describe("buildStdAddress 标准地址拼接", () => {
   });
 });
 
-describe("calcScore 标准评分(0-10)", () => {
-  it("城市完整地址:行政+路弄号+楼栋+室号", () => {
-    const score = calcScore({
+describe("classifyClass 地址分类", () => {
+  it("农村:有村/宅", () => {
+    expect(classifyClass({ village: "革新村" })).toBe("rural");
+    expect(classifyClass({ zhai: "徐家宅" })).toBe("rural");
+  });
+  it("城市POI:有 poi", () => {
+    expect(classifyClass({ poi: "中心广场" })).toBe("poi");
+  });
+  it("城市小区:有小区/子区域/路", () => {
+    expect(classifyClass({ community: "万博家园" })).toBe("community");
+    expect(classifyClass({ subarea: "河东片" })).toBe("community");
+    expect(classifyClass({ road: "七莘路" })).toBe("community");
+  });
+  it("未归类:仅有行政", () => {
+    expect(classifyClass({ district: "闵行区" })).toBe("unknown");
+  });
+});
+
+describe("calcScore 标准评分(0-10,类内核心满=6,额外要素+1,封顶10)", () => {
+  it("城市小区核心凑满(行政+路+弄+号+楼栋+室号)=6", () => {
+    expect(calcScore({
       district: "闵行区", street: "七宝镇", road: "永跃路",
       lane: "260弄", road_number: "38号", building: "5号楼", room: "502室",
-    });
-    // 区县1+街镇2 + 路2+弄2+号2+楼栋1 + 室1 = 11 → cap 10
-    expect(score).toBe(10);
+    })).toBe(6);
   });
 
-  it("无路无村城市地址:小区/POI +4 楼栋+1", () => {
-    expect(calcScore({ community: "万博家园", building: "1号" })).toBe(5);
-    expect(calcScore({ poi: "中心广场" })).toBe(4);
+  it("城市小区核心满 + 支弄/方向/单元/楼层 = 10", () => {
+    expect(calcScore({
+      district: "闵行区", street: "七宝镇", road: "永跃路",
+      lane: "260弄", road_number: "38号", sub_lane: "1支弄",
+      building: "5号楼", room: "502室", direction: "南", unit: "1单元", floor: "3层",
+    })).toBe(10);
   });
 
-  it("农村地址:村3 + 宅/队/组2", () => {
-    expect(calcScore({ village: "革新村", zhai: "徐家宅" })).toBe(5);
+  it("无路无村城市地址:仅 community+楼栋 → 1", () => {
+    expect(calcScore({ community: "万博家园", building: "1号" })).toBe(1);
   });
 
-  it("行政分级:仅区县1;街镇2;居委3", () => {
+  it("城市POI:中心广场无路无号 → 0;完整 POI=6,加方向单元=8", () => {
+    expect(calcScore({ poi: "中心广场" })).toBe(0);
+    expect(calcScore({
+      poi: "中心广场", district: "闵行区", road: "南京西路", road_number: "1号", room: "301室",
+    })).toBe(6);
+    expect(calcScore({
+      poi: "中心广场", district: "闵行区", road: "南京西路", road_number: "1号", room: "301室",
+      direction: "北", unit: "2单元",
+    })).toBe(8);
+  });
+
+  it("农村:村+宅 → base 2/3×6=2 + 宅额外1 = 3", () => {
+    expect(calcScore({ village: "革新村", zhai: "徐家宅" })).toBe(3);
+  });
+
+  it("农村核心满 + 队/组/方向 = 9", () => {
+    expect(calcScore({
+      district: "闵行区", village: "革新村", room: "302号",
+      team: "10队", group: "5组", direction: "东",
+    })).toBe(9);
+  });
+
+  it("纯行政保留基础分:仅区县1;街镇2;居委3", () => {
     expect(calcScore({ district: "闵行区" })).toBe(1);
     expect(calcScore({ district: "闵行区", street: "七宝镇" })).toBe(2);
     expect(calcScore({ district: "闵行区", region: "航华居委" })).toBe(3);
   });
 
-  it("室号+1 方向+1", () => {
+  it("室号+1 方向+1(未归类)", () => {
     expect(calcScore({ room: "403室", direction: "北" })).toBe(2);
   });
 
-  it("上限 10", () => {
+  it("上限 10:核心满 + 4 额外要素", () => {
     const full = {
       district: "闵行区", street: "七宝镇", road: "永跃路", lane: "260弄",
-      road_number: "38号", building: "5号楼", room: "502室", direction: "南",
+      road_number: "38号", building: "5号楼", room: "502室",
+      sub_lane: "1支弄", direction: "南", unit: "1单元", floor: "3层",
     };
     expect(calcScore(full)).toBe(10);
   });
 });
 
 describe("formatScoreDetail 评分明细", () => {
-  it("明细行数与得分一致", () => {
-    const lines = formatScoreDetail(8, { district: "闵行区", road: "永跃路", lane: "260弄", room: "502室" });
-    expect(lines[0]).toBe("区：闵行区 (+1)");
-    expect(lines[lines.length - 1]).toBe("\n得分：8 / 10");
+  it("城市小区明细含类别/核心凑满度/得分", () => {
+    const lines = formatScoreDetail(6, {
+      district: "闵行区", road: "永跃路", lane: "260弄",
+      road_number: "38号", building: "5号楼", room: "502室",
+    });
+    expect(lines[0]).toBe("类别：城市小区");
+    expect(lines.some((l) => l.startsWith("核心凑满度：6/6"))).toBe(true);
+    expect(lines[lines.length - 1]).toBe("\n得分：6 / 10");
+  });
+
+  it("未归类明细显示行政基础分", () => {
+    const lines = formatScoreDetail(2, { district: "闵行区", street: "七宝镇" });
+    expect(lines[0]).toBe("类别：未归类(纯行政)");
+    expect(lines.some((l) => l.startsWith("街镇"))).toBe(true);
+    expect(lines[lines.length - 1]).toBe("\n得分：2 / 10");
   });
 });

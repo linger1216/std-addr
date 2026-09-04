@@ -348,6 +348,28 @@ model StdAddress {
     @@map("std_address")
 }
 
+// ─── 诉件(外部表,只读映射) ───────────────────────
+// 数据来自 db 中已存在的 complains 表(城管诉件);本模型仅做只读映射,
+// 不负责建表/迁移。重复诉件、人房等场景直接基于该表计算,不落库结果。
+model Complains {
+    taskId         String   @id @map("taskid")
+    address        String?  @map("address")
+    stdAddress     String?  @map("std_address")
+    discoverTime   DateTime? @map("discovertime")
+    reporter       String?  @map("reporter")
+    contactInfo    String?  @map("contactinfo")
+    cgType         String?  @map("cgtype")
+    streetName     String?  @map("streetname")
+    newWorkGridName String? @map("newworkgridname")
+    communityName  String?  @map("communityname")
+    description    String?  @map("description")
+    infoTypeName   String?  @map("infotypename")
+
+    @@index([cgType])
+    @@index([discoverTime])
+    @@map("complains")
+}
+
 // ─── 系统设置 ──────────────────────────────────────
 // key-value 配置表:系统名称/描述(sys.name/sys.description)、
 // 模型服务 URL(model.serviceUrl,地址解析模型 API 端口)。

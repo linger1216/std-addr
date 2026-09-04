@@ -69,11 +69,11 @@ function Calendar({
           defaultClassNames.month_caption
         ),
         dropdowns: cn(
-          "flex h-(--cell-size) w-full items-center justify-center gap-1.5 text-sm font-medium",
+          "flex h-(--cell-size) w-full flex-nowrap items-center justify-center gap-1 whitespace-nowrap text-sm font-medium",
           defaultClassNames.dropdowns
         ),
         dropdown_root: cn(
-          "relative rounded-(--cell-radius)",
+          "relative min-w-0 rounded-(--cell-radius)",
           defaultClassNames.dropdown_root
         ),
         dropdown: cn(
@@ -81,7 +81,7 @@ function Calendar({
           defaultClassNames.dropdown
         ),
         caption_label: cn(
-          "font-medium select-none",
+          "font-medium select-none whitespace-nowrap",
           captionLayout === "label"
             ? "text-sm"
             : "flex items-center gap-1 rounded-(--cell-radius) text-sm [&>svg]:size-3.5 [&>svg]:text-muted-foreground",

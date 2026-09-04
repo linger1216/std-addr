@@ -208,7 +208,7 @@ const CASES: StdCase[] = [
     raw: `华漕镇万博家园16号701室`,
     ml: { town: C, community: "万博家园", building: "16号", room: "701室" },
     db: { community: [{ id: "c000001a03e838ba32cad1aa8", name: "万博家园", regionId: "1254" }] },
-    expected: { stdAddress: `华漕镇万博家园16号701室`, score: 9, fieldsExist: ["community", "neighborhood"] },
+    expected: { stdAddress: `华漕镇万博家园16号701室`, score: 3, fieldsExist: ["community", "neighborhood"] },
   },
   {
     id: "COM-A2", category: "小区匹配", description: "小区别名匹配(S32小区 alias=S32)",
@@ -223,7 +223,7 @@ const CASES: StdCase[] = [
     raw: `华漕镇万博家园`,
     ml: { town: C, community: "万博家园" },
     db: { community: [{ id: "c000001a03e838ba32cad1aa8", name: "万博家园", regionId: "1254" }] },
-    expected: { stdAddress: `华漕镇万博家园`, score: 7 },
+    expected: { stdAddress: `华漕镇万博家园`, score: 1 },
   },
   {
     id: "COM-A5", category: "小区匹配", description: "小区不存在 → 保留 ML 字段",
@@ -238,7 +238,7 @@ const CASES: StdCase[] = [
     raw: `颛桥镇836公交终点站`,
     ml: { town: Q, poi: "836公交终点站" },
     db: { poi: [{ id: "2955", name: "836公交终点站", regionId: null }] },
-    expected: { stdAddress: `颛桥镇836公交终点站`, score: 6, fieldsExist: ["poi"] },
+    expected: { stdAddress: `颛桥镇836公交终点站`, score: 2, fieldsExist: ["poi"] },
   },
   {
     id: "POI-A2", category: "POI匹配", description: "POI 无路弄号 ref → 路保留 ML 值(降级:不替换为关联路)",
@@ -251,7 +251,7 @@ const CASES: StdCase[] = [
     id: "POI-A3", category: "POI匹配", description: "纯路号无 POI 关联",
     raw: `颛桥镇新镇路256号`,
     ml: { town: Q, road: "新镇路", road_number: "256号" },
-    expected: { stdAddress: `颛桥镇新镇路256号`, score: 6, fieldsNotExist: ["poi"] },
+    expected: { stdAddress: `颛桥镇新镇路256号`, score: 3, fieldsNotExist: ["poi"] },
   },
 
   // ============ F. 子区域匹配(实体无 subarea 记录 → 保留 ML 字段) ============
@@ -283,7 +283,7 @@ const CASES: StdCase[] = [
     raw: `浦江镇革新村302号`,
     ml: { town: P, village: "革新村", room: "302号" },
     db: { village: [{ id: "cmtcluixl0030gxxs41mtky78", name: "革新村", regionId: "cmtcluixl0030gxxs41mtky78" }] },
-    expected: { stdAddress: `浦江镇革新村302号`, score: 7, fieldsExist: ["village"] },
+    expected: { stdAddress: `浦江镇革新村302号`, score: 6, fieldsExist: ["village"] },
   },
   {
     id: "VIL-A4", category: "村匹配", description: "村在库(镇北村)→ 正常匹配(旧库不在,主库存在,行为升级)",
@@ -323,25 +323,25 @@ const CASES: StdCase[] = [
     id: "RL-C1", category: "路弄号→小区", description: "路+弄:无 ref 表 → 不填充小区(降级)",
     raw: `颛桥镇贵都路366弄20号601室`,
     ml: { town: Q, road: "贵都路", lane: "366弄", building: "20号", room: "601室" },
-    expected: { stdAddress: `颛桥镇贵都路366弄20号601室`, score: 8, fieldsNotExist: ["community"] },
+    expected: { stdAddress: `颛桥镇贵都路366弄20号601室`, score: 5, fieldsNotExist: ["community"] },
   },
   {
     id: "RL-C3", category: "路弄号→小区", description: "仅有弄号(无路)→ 不触发匹配,弄只计分不拼接",
     raw: `颛桥镇366弄`,
     ml: { town: Q, lane: "366弄" },
-    expected: { stdAddress: `颛桥镇`, score: 4, fieldsNotExist: ["community"] },
+    expected: { stdAddress: `颛桥镇`, score: 2, fieldsNotExist: ["community"] },
   },
   {
     id: "RL-C4", category: "路弄号→小区", description: "仅有路名 → 不触发匹配",
     raw: `颛桥镇贵都路`,
     ml: { town: Q, road: "贵都路" },
-    expected: { stdAddress: `颛桥镇贵都路`, score: 4, fieldsNotExist: ["community"] },
+    expected: { stdAddress: `颛桥镇贵都路`, score: 2, fieldsNotExist: ["community"] },
   },
   {
     id: "RL-C5", category: "路弄号→小区", description: "路+弄(库无该弄)→ 不填充",
     raw: `颛桥镇贵都路260弄`,
     ml: { town: Q, road: "贵都路", lane: "260弄" },
-    expected: { stdAddress: `颛桥镇贵都路260弄`, score: 6 },
+    expected: { stdAddress: `颛桥镇贵都路260弄`, score: 3 },
   },
   {
     id: "RL-S1", category: "路弄号→子区域", description: "路+弄 → 无 ref 表,不填充子区域(降级)",
@@ -422,34 +422,34 @@ const CASES: StdCase[] = [
 
   // ============ M. 评分 ============
   {
-    id: "SCR-A1", category: "评分", description: "完整城市(居委/路/弄/楼栋/室)= 9 分",
+    id: "SCR-A1", category: "评分", description: "完整城市(居委/路/弄/楼栋/室)= 5 分(核心5/6,无支弄/方向/单元/楼层额外)",
     raw: `华漕镇贵都路366弄16号701室`,
     ml: { neighborhood: "万博家园居民委员会", road: "贵都路", lane: "366弄", building: "16号", room: "701室" },
-    expected: { score: 9 },
+    expected: { score: 5 },
   },
   {
-    id: "SCR-A3", category: "评分", description: "简略道路(镇/路/弄)= 6 分",
+    id: "SCR-A3", category: "评分", description: "简略道路(镇/路/弄)= 3 分(核心3/6)",
     raw: `闵行区颛桥镇颛兴路180弄`,
     ml: { district: "闵行区", town: Q, road: "颛兴路", lane: "180弄" },
-    expected: { score: 6 },
+    expected: { score: 3 },
   },
   {
     id: "SCR-A5", category: "评分", description: "仅上海市 → 0 分",
-    raw: "上海市",
-    ml: { province: "上海市" },
-    expected: { score: 0 },
+      raw: "上海市",
+      ml: { province: "上海市" },
+      expected: { score: 1 },
   },
   {
-    id: "SCR-C1", category: "评分", description: "完整农村(镇/村/队组/室)= 8 分(无居委)",
+    id: "SCR-C1", category: "评分", description: "完整农村(镇/村/队组/室)= 9 分(核心3/3=6 + 宅/队/组3)",
     raw: `浦江镇革新村徐家宅10队5组302号`,
     ml: { town: P, village: "革新村", zhai: "徐家宅", team: "10队", group: "5组", room: "302号" },
-    expected: { score: 8 },
+    expected: { score: 9 },
   },
   {
-    id: "SCR-C2", category: "评分", description: "仅村名(镇/村)= 5 分",
+    id: "SCR-C2", category: "评分", description: "仅村名(镇/村)= 4 分(核心2/3→4)",
     raw: `浦江镇革新村`,
     ml: { town: P, village: "革新村" },
-    expected: { score: 5 },
+    expected: { score: 4 },
   },
 
   // ============ N/O. 楼栋与完整拼接 ============
@@ -458,7 +458,7 @@ const CASES: StdCase[] = [
     raw: `颛桥镇颛兴路180弄1号2单元3层401室`,
     ml: { town: Q, road: "颛兴路", lane: "180弄", building: "1号", unit: "2单元", floor: "3层", room: "401室" },
     // 单元/层不计分:镇2+路2+弄2+栋1+室1=8
-    expected: { stdAddress: `颛桥镇颛兴路180弄1号2单元3层401室`, score: 8, fieldsExist: ["building", "unit", "floor", "room"] },
+    expected: { stdAddress: `颛桥镇颛兴路180弄1号2单元3层401室`, score: 7, fieldsExist: ["building", "unit", "floor", "room"] },
   },
   {
     id: "BLD-A2", category: "楼栋拼接", description: "无楼栋有室号",
@@ -512,7 +512,7 @@ const CASES: StdCase[] = [
     id: "NOR-A1", category: "无匹配", description: "纯道路地址无实体匹配",
     raw: "闵行区古美路街道古龙路288号102室",
     ml: { district: "闵行区", street: "古美路街道", road: "古龙路", road_number: "288号", room: "102室" },
-    expected: { stdAddress: "闵行区古美路街道古龙路288号102室", score: 7 },
+    expected: { stdAddress: "闵行区古美路街道古龙路288号102室", score: 4 },
   },
 
   // ============ R. 边界条件 ============

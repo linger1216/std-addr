@@ -817,13 +817,14 @@ class StandardizeService {
       // ====== 10. 缓存写入 ======
       // 始终写入(即便 debug / force:debug 不跳过写,force 跳过读但写)
       if (cleanedAddress) {
-        cache.set(`std:${cleanedAddress}`, res);
+        const cacheKey = `std:${cleanedAddress}`;
+        cache.set(cacheKey, res);
         trace(
           "收尾",
           "缓存写入",
           null,
-          `std:${cleanedAddress}`,
-          "进程内 LRU 缓存写入",
+          { key: cacheKey, value: { stdAddress: res.stdAddress, stdScore: res.stdScore } },
+          "进程内 LRU 缓存写入(key → 缓存值)",
           "ok",
         );
       }
@@ -911,6 +912,35 @@ class StandardizeService {
         : `命中 region:${region.name}(别名 ${matchedAlias} 命中)`,
       "match",
     );
+  }
+
+  /**
+   * 仅取模型 NER 原始要素(小区/POI/村/楼栋/室号/路),跳过 DB 实体匹配。
+   * 人房关联树用:不需要标准地址库(region/community/subarea/poi/village 匹配 + 评分),
+   * 直接拿模型解析出的层级要素即可。`mlParse` 仅做一次轻量 sysSetting 读 + /api/format 拉取。
+   */
+  async mlFields(rawAddress: string): Promise<StdFields> {
+    // 去逗号:标准化生成的 std_address 常在弄号段间插入逗号(如 "229弄,22弄602室"),
+    // 会截断 ML 解析、导致室号/楼栋丢失;去掉后室号可正常识别。
+    const cleaned = preprocessRaw(rawAddress).replace(/[，,]/g, "");
+    if (!cleaned.trim()) return {};
+    try {
+      const fields = await mlParse(cleaned);
+      // 兜底:ML 未识别室号,但 building 含「室」(如 "22弄602室"),把室号从 building 拆出
+      if (!fields.room?.trim() && fields.building?.includes("室")) {
+        const m = /^(.*?)(\d+室.*)$/.exec(fields.building);
+        if (m) {
+          return {
+            ...fields,
+            building: m[1] ? m[1].trim() : undefined,
+            room: m[2]!.trim(),
+          };
+        }
+      }
+      return fields;
+    } catch {
+      return {};
+    }
   }
 }
 

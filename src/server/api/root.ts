@@ -14,6 +14,7 @@ import { settingsRouter } from "@/server/api/routers/settings";
 import { addrModelRouter } from "@/server/api/routers/addr-model";
 import { subareaRouter } from "@/server/api/routers/subarea";
 import { stdAddressRouter } from "@/server/api/routers/std-address";
+import { complainsRouter } from "@/server/api/routers/complains";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
 /**
@@ -38,6 +39,7 @@ export const appRouter = createTRPCRouter({
   addrModel: addrModelRouter,
   subarea: subareaRouter,
   stdAddress: stdAddressRouter,
+  complains: complainsRouter,
 });
 
 // export type definition of API
