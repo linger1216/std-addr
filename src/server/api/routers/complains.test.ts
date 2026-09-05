@@ -53,6 +53,52 @@ describe("buildCommonFilter", () => {
     const { whereParts } = buildCommonFilter({ cgType: ["", "  "] });
     expect(whereParts).toEqual([]);
   });
+
+  it("案件大类/小类/子类 → 精确 = ? 占位", () => {
+    const { whereParts, params } = buildCommonFilter({
+      caseBigType: "市容环境",
+      caseSmallType: "垃圾分类",
+      caseSubType: "混投",
+    });
+    expect(whereParts).toEqual([
+      "infobcname = ?",
+      "infoscname = ?",
+      "infozcname = ?",
+    ]);
+    expect(params).toEqual(["市容环境", "垃圾分类", "混投"]);
+  });
+
+  it("仅部分案件分类 → 仅对应片段", () => {
+    const { whereParts, params } = buildCommonFilter({
+      caseBigType: "市容环境",
+      caseSubType: "混投",
+    });
+    expect(whereParts).toEqual(["infobcname = ?", "infozcname = ?"]);
+    expect(params).toEqual(["市容环境", "混投"]);
+  });
+
+  it("案件分类与既有条件混合", () => {
+    const { whereParts, params } = buildCommonFilter({
+      cgType: "x",
+      startDate: "2024-01-01",
+      caseSmallType: "垃圾分类",
+    });
+    expect(whereParts).toEqual([
+      "cgtype IN (?)",
+      "discovertime >= ?",
+      "infoscname = ?",
+    ]);
+    expect(params).toEqual(["x", "2024-01-01", "垃圾分类"]);
+  });
+
+  it("案件分类空串被忽略", () => {
+    const { whereParts } = buildCommonFilter({
+      caseBigType: "  ",
+      caseSmallType: "",
+      caseSubType: null as unknown as string,
+    });
+    expect(whereParts).toEqual([]);
+  });
 });
 
 describe("whereSql", () => {

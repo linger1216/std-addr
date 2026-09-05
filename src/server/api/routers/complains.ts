@@ -44,6 +44,9 @@ type ComplaintsListRow = {
   discovertime: Date | string | null;
   streetname: string | null;
   newworkgridname: string | null;
+  infobcname: string | null;
+  infoscname: string | null;
+  infozcname: string | null;
 };
 
 export const complainsRouter = createTRPCRouter({
@@ -61,7 +64,13 @@ export const complainsRouter = createTRPCRouter({
    * 网格名称随街镇联动:传入 streetName 时,网格仅取该街镇下属(街镇+网格 一对多)。
    */
   filterOptions: protectedProcedure
-    .input(z.object({ streetName: z.string().trim().optional() }))
+    .input(
+      z.object({
+        streetName: z.string().trim().optional(),
+        caseBigType: z.string().trim().optional(),
+        caseSmallType: z.string().trim().optional(),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       const streets: { streetname: string }[] = await ctx.db.$queryRawUnsafe(
         `SELECT DISTINCT streetname FROM complains WHERE streetname IS NOT NULL AND streetname <> '' ORDER BY streetname`,
@@ -72,9 +81,32 @@ export const complainsRouter = createTRPCRouter({
       const grids: { newworkgridname: string }[] = input.streetName
         ? await ctx.db.$queryRawUnsafe(gridSql, `%${input.streetName}%`)
         : await ctx.db.$queryRawUnsafe(gridSql);
+
+      // 案件分类级联:大类 → 小类(随大类) → 子类(随大类 + 小类)
+      const bigTypes: { infobcname: string }[] = await ctx.db.$queryRawUnsafe(
+        `SELECT DISTINCT infobcname FROM complains WHERE infobcname IS NOT NULL AND infobcname <> '' ORDER BY infobcname`,
+      );
+      const smallSql = input.caseBigType
+        ? `SELECT DISTINCT infoscname FROM complains WHERE infobcname = ? AND infoscname IS NOT NULL AND infoscname <> '' ORDER BY infoscname`
+        : `SELECT DISTINCT infoscname FROM complains WHERE infoscname IS NOT NULL AND infoscname <> '' ORDER BY infoscname`;
+      const smallTypes: { infoscname: string }[] = input.caseBigType
+        ? await ctx.db.$queryRawUnsafe(smallSql, input.caseBigType)
+        : await ctx.db.$queryRawUnsafe(smallSql);
+      const subSql =
+        input.caseBigType && input.caseSmallType
+          ? `SELECT DISTINCT infozcname FROM complains WHERE infobcname = ? AND infoscname = ? AND infozcname IS NOT NULL AND infozcname <> '' ORDER BY infozcname`
+          : `SELECT DISTINCT infozcname FROM complains WHERE infozcname IS NOT NULL AND infozcname <> '' ORDER BY infozcname`;
+      const subTypes: { infozcname: string }[] =
+        input.caseBigType && input.caseSmallType
+          ? await ctx.db.$queryRawUnsafe(subSql, input.caseBigType, input.caseSmallType)
+          : await ctx.db.$queryRawUnsafe(subSql);
+
       return {
         streets: streets.map((s) => s.streetname),
         grids: grids.map((g) => g.newworkgridname),
+        bigTypes: bigTypes.map((t) => t.infobcname),
+        smallTypes: smallTypes.map((t) => t.infoscname),
+        subTypes: subTypes.map((t) => t.infozcname),
       };
     }),
 
@@ -174,6 +206,9 @@ export const complainsRouter = createTRPCRouter({
         endDate: z.string().trim().optional(),
         streetName: z.string().trim().optional(),
         gridName: z.string().trim().optional(),
+        caseBigType: z.string().trim().optional(),
+        caseSmallType: z.string().trim().optional(),
+        caseSubType: z.string().trim().optional(),
         limit: z.number().int().min(1).max(10000).default(2000),
       }),
     )
@@ -183,6 +218,9 @@ export const complainsRouter = createTRPCRouter({
         endDate: input.endDate,
         streetName: input.streetName,
         gridName: input.gridName,
+        caseBigType: input.caseBigType,
+        caseSmallType: input.caseSmallType,
+        caseSubType: input.caseSubType,
       });
       whereParts.unshift(`reporter IS NOT NULL AND reporter <> ''`);
       const w = whereSql(whereParts);
@@ -264,6 +302,9 @@ export const complainsRouter = createTRPCRouter({
         endDate: z.string().trim().optional(),
         streetName: z.string().trim().optional(),
         gridName: z.string().trim().optional(),
+        caseBigType: z.string().trim().optional(),
+        caseSmallType: z.string().trim().optional(),
+        caseSubType: z.string().trim().optional(),
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(200).default(20),
       }),
@@ -274,13 +315,17 @@ export const complainsRouter = createTRPCRouter({
         endDate: input.endDate,
         streetName: input.streetName,
         gridName: input.gridName,
+        caseBigType: input.caseBigType,
+        caseSmallType: input.caseSmallType,
+        caseSubType: input.caseSubType,
       });
       const w = whereSql(whereParts);
 
       const countSql = `SELECT COUNT(*) AS c FROM complains ${w}`;
       const listSql = `
         SELECT taskid, address, std_address, reporter, contactinfo,
-               cgtype, discovertime, streetname, newworkgridname
+               cgtype, discovertime, streetname, newworkgridname,
+               infobcname, infoscname, infozcname
         FROM complains ${w}
         ORDER BY discovertime DESC
         LIMIT ? OFFSET ?
@@ -305,6 +350,9 @@ export const complainsRouter = createTRPCRouter({
         discoverTime: r.discovertime ? String(r.discovertime).slice(0, 10) : "",
         streetName: r.streetname ?? "",
         gridName: r.newworkgridname ?? "",
+        caseBigType: r.infobcname ?? "",
+        caseSmallType: r.infoscname ?? "",
+        caseSubType: r.infozcname ?? "",
       }));
 
       return {

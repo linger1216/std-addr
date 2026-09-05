@@ -41,6 +41,9 @@ export function ComplaintsListTable({
               <TableHead>地址</TableHead>
               <TableHead>标准地址</TableHead>
               <TableHead className="w-[110px]">类型</TableHead>
+              <TableHead className="w-[120px]">案件大类</TableHead>
+              <TableHead className="w-[120px]">案件小类</TableHead>
+              <TableHead className="w-[120px]">案件子类</TableHead>
               <TableHead className="w-[110px]">发现时间</TableHead>
               <TableHead className="w-[100px]">街镇</TableHead>
               <TableHead className="w-[120px]">网格名称</TableHead>
@@ -49,7 +52,7 @@ export function ComplaintsListTable({
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-6 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={12} className="py-6 text-center text-sm text-muted-foreground">
                   无诉件记录
                 </TableCell>
               </TableRow>
@@ -68,6 +71,9 @@ export function ComplaintsListTable({
                     {it.stdAddress || "—"}
                   </TableCell>
                   <TableCell className="truncate">{it.cgType || "—"}</TableCell>
+                  <TableCell className="truncate">{it.caseBigType || "—"}</TableCell>
+                  <TableCell className="truncate">{it.caseSmallType || "—"}</TableCell>
+                  <TableCell className="truncate">{it.caseSubType || "—"}</TableCell>
                   <TableCell className="truncate text-xs">{it.discoverTime || "—"}</TableCell>
                   <TableCell className="truncate">{it.streetName || "—"}</TableCell>
                   <TableCell className="truncate">{it.gridName || "—"}</TableCell>

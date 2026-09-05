@@ -1,7 +1,7 @@
 // 重复诉件 / 人房 的纯计算逻辑(不依赖 tRPC / Prisma),便于单测与复用。
 
-/** 构造 cgtype / 发现时间区间 / 关键字 / 街镇 / 网格名称 的 WHERE 片段与占位参数。
- * 全部使用 `?` 占位符 + 参数化(防 SQL 注入),不直接拼接值。 */
+/** 构造 cgtype / 发现时间区间 / 关键字 / 街镇 / 网格名称 / 案件大类/小类/子类 的
+ * WHERE 片段与占位参数。全部使用 `?` 占位符 + 参数化(防 SQL 注入),不直接拼接值。 */
 export function buildCommonFilter(input: {
   cgType?: string | string[];
   startDate?: string;
@@ -9,6 +9,9 @@ export function buildCommonFilter(input: {
   keyword?: string;
   streetName?: string;
   gridName?: string;
+  caseBigType?: string;
+  caseSmallType?: string;
+  caseSubType?: string;
 }): { whereParts: string[]; params: unknown[] } {
   const whereParts: string[] = [];
   const params: unknown[] = [];
@@ -43,6 +46,22 @@ export function buildCommonFilter(input: {
   if (grid) {
     whereParts.push(`newworkgridname LIKE ?`);
     params.push(`%${grid}%`);
+  }
+  // 案件大类/小类/子类:精确匹配(级联筛选)
+  const big = input.caseBigType?.trim();
+  if (big) {
+    whereParts.push(`infobcname = ?`);
+    params.push(big);
+  }
+  const small = input.caseSmallType?.trim();
+  if (small) {
+    whereParts.push(`infoscname = ?`);
+    params.push(small);
+  }
+  const sub = input.caseSubType?.trim();
+  if (sub) {
+    whereParts.push(`infozcname = ?`);
+    params.push(sub);
   }
   return { whereParts, params };
 }

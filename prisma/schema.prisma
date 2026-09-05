@@ -364,9 +364,15 @@ model Complains {
     communityName  String?  @map("communityname")
     description    String?  @map("description")
     infoTypeName   String?  @map("infotypename")
+    // 案件分类(大类/小类/子类,独立字段,精确匹配筛选)
+    caseBigType    String?  @map("infobcname")
+    caseSmallType  String?  @map("infoscname")
+    caseSubType    String?  @map("infozcname")
 
     @@index([cgType])
     @@index([discoverTime])
+    @@index([caseBigType])
+    @@index([caseSmallType])
     @@map("complains")
 }
 
