@@ -312,8 +312,17 @@ export function DateRangePicker({
                         from: range?.from ? toISO(range.from) : undefined,
                         to: range?.to ? toISO(range.to) : undefined,
                       });
-                      // 选完结束日期(完整区间)后自动确定并收起浮层
-                      if (range?.from && range?.to) closeList();
+                      // 选完结束日期(完整区间)后自动收起浮层。
+                      // 注意:react-day-picker 在 range 模式下单击即生成 {from,to}
+                      // 同日的单日区间(min 默认 0),若仅判断 from&&to 会在「点一次」时
+                      // 就关闭。必须起止为不同日(即第二次点击)才关闭,保证选 2 次才收起。
+                      if (
+                        range?.from &&
+                        range?.to &&
+                        range.from.getTime() !== range.to.getTime()
+                      ) {
+                        closeList();
+                      }
                     }}
                   />
                   <div className="mt-2 flex justify-end gap-2">
