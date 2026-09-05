@@ -97,11 +97,11 @@ function RangeYearNav({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "absolute inset-x-0 top-0 flex w-full items-center justify-between gap-0.5",
+        "absolute inset-x-0 top-0 flex h-(--cell-size) w-full items-center justify-between gap-0.5",
         className,
       )}
     >
-      <div className="flex items-center gap-0.5">
+      <div className="flex h-full items-center gap-0.5">
         <button
           type="button"
           aria-label="上一年"
@@ -121,7 +121,7 @@ function RangeYearNav({ className }: { className?: string }) {
           <ChevronLeftIcon className="size-4" />
         </button>
       </div>
-      <div className="flex items-center gap-0.5">
+      <div className="flex h-full items-center gap-0.5">
         <button
           type="button"
           aria-label="下一月"
