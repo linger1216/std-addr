@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { standardizeService } from "@/server/services/standardizeService";
@@ -8,11 +7,7 @@ import {
   whereSql,
   resolveTown,
   rollUpByTown,
-  buildPersonHouseTree,
   type DupGroup,
-  type PersonRow,
-  type PersonHouseEntry,
-  type PersonHouseTree,
   type AddrFields,
 } from "./complains-logic";
 
@@ -25,6 +20,7 @@ export type {
   AreaNode,
   BuildingNode,
   RoomNode,
+  UnitNode,
 } from "./complains-logic";
 
 /** 公共筛选入参(重复诉件 / 人房 共用) */
@@ -61,56 +57,15 @@ export const complainsRouter = createTRPCRouter({
   }),
 
   /**
-   * 人房关联筛选下拉数据:从 complains 表提取去重的街镇(streetname)与
-   * 网格名称(newworkgridname),供页面下拉框使用。
-   * 网格名称随街镇联动:传入 streetName 时,网格仅取该街镇下属(街镇+网格 一对多)。
+   * 人房关联筛选下拉数据:仅返回去重的街镇(streetname),供页面「街镇」下拉框使用。
+   * 人房关联只用 时间 + 街镇(网格名称 / 案件大类小类子类筛选已移除)。
    */
-  filterOptions: protectedProcedure
-    .input(
-      z.object({
-        streetName: z.string().trim().optional(),
-        caseBigType: z.string().trim().optional(),
-        caseSmallType: z.string().trim().optional(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const streets: { streetname: string }[] = await ctx.db.$queryRawUnsafe(
-        `SELECT DISTINCT streetname FROM complains WHERE streetname IS NOT NULL AND streetname <> '' ORDER BY streetname`,
-      );
-      const gridSql = input.streetName
-        ? `SELECT DISTINCT newworkgridname FROM complains WHERE streetname LIKE ? AND newworkgridname IS NOT NULL AND newworkgridname <> '' ORDER BY newworkgridname`
-        : `SELECT DISTINCT newworkgridname FROM complains WHERE newworkgridname IS NOT NULL AND newworkgridname <> '' ORDER BY newworkgridname`;
-      const grids: { newworkgridname: string }[] = input.streetName
-        ? await ctx.db.$queryRawUnsafe(gridSql, `%${input.streetName}%`)
-        : await ctx.db.$queryRawUnsafe(gridSql);
-
-      // 案件分类级联:大类 → 小类(随大类) → 子类(随大类 + 小类)
-      const bigTypes: { infobcname: string }[] = await ctx.db.$queryRawUnsafe(
-        `SELECT DISTINCT infobcname FROM complains WHERE infobcname IS NOT NULL AND infobcname <> '' ORDER BY infobcname`,
-      );
-      const smallSql = input.caseBigType
-        ? `SELECT DISTINCT infoscname FROM complains WHERE infobcname = ? AND infoscname IS NOT NULL AND infoscname <> '' ORDER BY infoscname`
-        : `SELECT DISTINCT infoscname FROM complains WHERE infoscname IS NOT NULL AND infoscname <> '' ORDER BY infoscname`;
-      const smallTypes: { infoscname: string }[] = input.caseBigType
-        ? await ctx.db.$queryRawUnsafe(smallSql, input.caseBigType)
-        : await ctx.db.$queryRawUnsafe(smallSql);
-      const subSql =
-        input.caseBigType && input.caseSmallType
-          ? `SELECT DISTINCT infozcname FROM complains WHERE infobcname = ? AND infoscname = ? AND infozcname IS NOT NULL AND infozcname <> '' ORDER BY infozcname`
-          : `SELECT DISTINCT infozcname FROM complains WHERE infozcname IS NOT NULL AND infozcname <> '' ORDER BY infozcname`;
-      const subTypes: { infozcname: string }[] =
-        input.caseBigType && input.caseSmallType
-          ? await ctx.db.$queryRawUnsafe(subSql, input.caseBigType, input.caseSmallType)
-          : await ctx.db.$queryRawUnsafe(subSql);
-
-      return {
-        streets: streets.map((s) => s.streetname),
-        grids: grids.map((g) => g.newworkgridname),
-        bigTypes: bigTypes.map((t) => t.infobcname),
-        smallTypes: smallTypes.map((t) => t.infoscname),
-        subTypes: subTypes.map((t) => t.infozcname),
-      };
-    }),
+  filterOptions: protectedProcedure.query(async ({ ctx }) => {
+    const streets: { streetname: string }[] = await ctx.db.$queryRawUnsafe(
+      `SELECT DISTINCT streetname FROM complains WHERE streetname IS NOT NULL AND streetname <> '' ORDER BY streetname`,
+    );
+    return { streets: streets.map((s) => s.streetname) };
+  }),
 
   /** 重复诉件:按 标准地址(空则用原始地址) + 城管类型 + 年月 分组,HAVING COUNT>=2,按街镇汇总 */
   duplicateComplaints: protectedProcedure
@@ -198,134 +153,8 @@ export const complainsRouter = createTRPCRouter({
     }),
 
   /**
-   * 人房关联(树):取非匿名(reporter 非空)诉件,在时间范围内对每人地址做标准地址解析,
-   * 聚合成 小区 → 楼栋 → 室号 → 人员 的树(点击「分析」时按需计算,不落库)。
-   */
-  personHouseTree: protectedProcedure
-    .input(
-      z.object({
-        startDate: z.string().trim().optional(),
-        endDate: z.string().trim().optional(),
-        streetName: z.string().trim().optional(),
-        gridName: z.string().trim().optional(),
-        caseBigType: z.string().trim().optional(),
-        caseSmallType: z.string().trim().optional(),
-        caseSubType: z.string().trim().optional(),
-        limit: z.number().int().min(1).max(10000).default(2000),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      // 整体超时兜底:模型/数据库任一环节无响应时,绝不让请求一直 pending,
-      // 超时即返回清晰的 TIMEOUT 错误(客户端显示"分析失败"而非无限转圈)。
-      const OVERALL_TIMEOUT_MS = 90_000;
-      const compute = (async (): Promise<PersonHouseTree> => {
-        const { whereParts, params } = buildCommonFilter({
-          startDate: input.startDate,
-          endDate: input.endDate,
-          streetName: input.streetName,
-          gridName: input.gridName,
-          caseBigType: input.caseBigType,
-          caseSmallType: input.caseSmallType,
-          caseSubType: input.caseSubType,
-        });
-        whereParts.unshift(`reporter IS NOT NULL AND reporter <> ''`);
-        const w = whereSql(whereParts);
-
-        const sql = `
-          SELECT taskid, address, std_address, reporter, contactinfo,
-                 cgtype, discovertime, streetname
-          FROM complains ${w}
-          ORDER BY discovertime DESC
-          LIMIT ?
-        `;
-        const raw: Array<{
-          taskid: string;
-          address: string | null;
-          std_address: string | null;
-          reporter: string | null;
-          contactinfo: string | null;
-          cgtype: string | null;
-          discovertime: Date | string | null;
-          streetname: string | null;
-        }> = await ctx.db.$queryRawUnsafe(sql, ...params, input.limit);
-
-        const rows: PersonRow[] = raw.map((r) => ({
-          taskId: r.taskid,
-          reporter: r.reporter ?? "",
-          contactInfo: r.contactinfo ?? "",
-          address: r.address ?? "",
-          stdAddress: r.std_address ?? "",
-          discoverTime: r.discovertime
-            ? String(r.discovertime).slice(0, 10)
-            : "",
-          cgType: r.cgtype ?? "",
-          streetName: r.streetname ?? "",
-        }));
-
-        // 人房关联只用 ML 接口:mlFields 直接取模型 NER 要素(小区/POI/村/楼栋/室号/路)。
-        // 模型服务不可达时,逐个 30s 超时会把整棵分析拖成"一直 pending";
-        // 故先做一次快速探测:不可达则跳过 ML(树退化为未分类区域,秒回),
-        // 可达则逐条用较短超时(8s),避免单条卡死拖垮整体。
-        const ML_PROBE_TIMEOUT = 6000;
-        const ML_PER_CALL_TIMEOUT = 8000;
-        let mlAvailable = true;
-        try {
-          await standardizeService.mlFields("探测", ML_PROBE_TIMEOUT);
-        } catch {
-          mlAvailable = false;
-        }
-
-        // 并发标准化(分块,避免一次性打满模型服务);进程内 LRU 缓存命中重复地址
-        const entries: PersonHouseEntry[] = [];
-        const CONCURRENCY = 8;
-        for (let i = 0; i < rows.length; i += CONCURRENCY) {
-          const chunk = rows.slice(i, i + CONCURRENCY);
-          const res = await Promise.all(
-            chunk.map(async (row): Promise<PersonHouseEntry> => {
-              const inputAddr = row.stdAddress || row.address;
-              let fields: AddrFields = {};
-              if (inputAddr && mlAvailable) {
-                try {
-                  const std = await standardizeService.mlFields(inputAddr, ML_PER_CALL_TIMEOUT);
-                  fields = {
-                    community: std.community,
-                    poi: std.poi,
-                    village: std.village,
-                    building: std.building,
-                    room: std.room,
-                    road: std.road,
-                  };
-                } catch {
-                  fields = {};
-                }
-              }
-              return { person: row, fields };
-            }),
-          );
-          entries.push(...res);
-        }
-
-        return buildPersonHouseTree(entries);
-      })();
-
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new TRPCError({
-                code: "TIMEOUT",
-                message: "人房分析超时:模型或数据库未响应,请稍后重试。",
-              }),
-            ),
-          OVERALL_TIMEOUT_MS,
-        ),
-      );
-      return await Promise.race([compute, timeout]);
-    }),
-
-  /**
-   * 人房关联筛选下方的分页诉件列表:按 时间范围 + 街镇 + 网格名称 过滤,
-   * 返回该条件下的诉件(不限匿名)分页结果。offset 分页,与仓库 list 约定一致。
+   * 人房关联分页诉件查询:仅按 时间范围 + 街镇 过滤,返回该条件下的诉件(不限匿名)分页结果。
+   * 人房树由前端拿到全量分页结果后逐条调用 mlFieldsBatch + buildPersonHouseTree 自行渲染。
    */
   list: protectedProcedure
     .input(
@@ -333,10 +162,6 @@ export const complainsRouter = createTRPCRouter({
         startDate: z.string().trim().optional(),
         endDate: z.string().trim().optional(),
         streetName: z.string().trim().optional(),
-        gridName: z.string().trim().optional(),
-        caseBigType: z.string().trim().optional(),
-        caseSmallType: z.string().trim().optional(),
-        caseSubType: z.string().trim().optional(),
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(200).default(20),
       }),
@@ -346,10 +171,6 @@ export const complainsRouter = createTRPCRouter({
         startDate: input.startDate,
         endDate: input.endDate,
         streetName: input.streetName,
-        gridName: input.gridName,
-        caseBigType: input.caseBigType,
-        caseSmallType: input.caseSmallType,
-        caseSubType: input.caseSubType,
       });
       const w = whereSql(whereParts);
 
@@ -393,5 +214,35 @@ export const complainsRouter = createTRPCRouter({
         page: input.page,
         pageSize: input.pageSize,
       };
+    }),
+
+  /**
+   * 批量标准地址解析(仅取模型 NER 要素,不做 DB 实体匹配)。前端人房关联对每页诉件
+   * 收集地址后批量调用,合并进前端大对象。单批上限 500 条;每条短超时快速失败,
+   * 模型不可达时返回空字段(前端退化为未分类区域)。注意:返回顺序与入参地址一一对应。
+   */
+  mlFieldsBatch: protectedProcedure
+    .input(z.object({ addresses: z.array(z.string()).max(500) }))
+    .query(async ({ input }) => {
+      const ML_TIMEOUT = 8000;
+      return Promise.all(
+        input.addresses.map(async (addr) => {
+          try {
+            const f = await standardizeService.mlFields(addr, ML_TIMEOUT);
+            return {
+              community: f.community,
+              poi: f.poi,
+              village: f.village,
+              building: f.building,
+              room: f.room,
+              road: f.road,
+              team: f.team,
+              group: f.group,
+            } satisfies AddrFields;
+          } catch {
+            return {} satisfies AddrFields;
+          }
+        }),
+      );
     }),
 });

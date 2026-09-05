@@ -49,55 +49,31 @@ describe("buildCommonFilter", () => {
     ]);
   });
 
+  it("街镇 → streetname LIKE ? 占位", () => {
+    const { whereParts, params } = buildCommonFilter({ streetName: "梅陇镇" });
+    expect(whereParts).toEqual(["streetname LIKE ?"]);
+    expect(params).toEqual(["%梅陇镇%"]);
+  });
+
   it("空值被过滤", () => {
     const { whereParts } = buildCommonFilter({ cgType: ["", "  "] });
     expect(whereParts).toEqual([]);
   });
 
-  it("案件大类/小类/子类 → 精确 = ? 占位", () => {
-    const { whereParts, params } = buildCommonFilter({
-      caseBigType: "市容环境",
-      caseSmallType: "垃圾分类",
-      caseSubType: "混投",
-    });
-    expect(whereParts).toEqual([
-      "infobcname = ?",
-      "infoscname = ?",
-      "infozcname = ?",
-    ]);
-    expect(params).toEqual(["市容环境", "垃圾分类", "混投"]);
-  });
-
-  it("仅部分案件分类 → 仅对应片段", () => {
-    const { whereParts, params } = buildCommonFilter({
-      caseBigType: "市容环境",
-      caseSubType: "混投",
-    });
-    expect(whereParts).toEqual(["infobcname = ?", "infozcname = ?"]);
-    expect(params).toEqual(["市容环境", "混投"]);
-  });
-
-  it("案件分类与既有条件混合", () => {
+  it("人房关联只用 时间 + 街镇(cgtype / 关键字 / 街镇 组合)", () => {
     const { whereParts, params } = buildCommonFilter({
       cgType: "x",
       startDate: "2024-01-01",
-      caseSmallType: "垃圾分类",
+      streetName: "梅陇镇",
+      keyword: "路",
     });
     expect(whereParts).toEqual([
       "cgtype IN (?)",
       "discovertime >= ?",
-      "infoscname = ?",
+      "(address LIKE ? OR std_address LIKE ?)",
+      "streetname LIKE ?",
     ]);
-    expect(params).toEqual(["x", "2024-01-01", "垃圾分类"]);
-  });
-
-  it("案件分类空串被忽略", () => {
-    const { whereParts } = buildCommonFilter({
-      caseBigType: "  ",
-      caseSmallType: "",
-      caseSubType: null as unknown as string,
-    });
-    expect(whereParts).toEqual([]);
+    expect(params).toEqual(["x", "2024-01-01", "%路%", "%路%", "%梅陇镇%"]);
   });
 });
 
@@ -186,60 +162,77 @@ describe("rollUpByTown", () => {
 
 describe("buildPersonHouseTree", () => {
   const entries: PersonHouseEntry[] = [
-    ent("1", "张三", { community: "阳光小区", building: "1栋", room: "101室" }),
-    ent("2", "李四", { community: "阳光小区", building: "1栋", room: "101室" }), // 同室
-    ent("3", "王五", { community: "阳光小区", building: "1栋", room: "102室" }),
-    ent("4", "赵六", { community: "阳光小区", building: "2栋", room: "201室" }),
-    ent("5", "钱七", { road: "南京西路", building: "", room: "" }), // 无小区 → 回退 road;无楼栋/室号 → 占位
-    ent("6", "孙八", {}), // 全空 → 未分类小区/未编号楼栋/未编号室号
+    ent("1", "甲", { poi: "万达广场", building: "A座", room: "305室" }), // POI:人员直接挂区域
+    ent("2", "乙", { village: "王家宅", team: "1队", group: "3组" }), // 村:队+组 都有
+    ent("3", "丙", { village: "王家宅", team: "1队" }), // 村:仅队
+    ent("4", "丁", { community: "阳光小区", building: "1栋", room: "101室" }),
+    ent("5", "戊", { community: "阳光小区", building: "1栋", room: "101室" }), // 同室
+    ent("6", "己", { road: "双柏路" }), // 仅路名 → 未分类区域
   ];
 
-  it("聚合成 小区 → 楼栋 → 室号 → 人员", () => {
+  it("聚合成 小区 / 村 / POI / 未分类 四类区域", () => {
     const tree = buildPersonHouseTree(entries);
-    expect(tree.stats.areas).toBe(2); // 阳光小区 / 未分类区域(路名、全空均归入)
+    expect(tree.stats.areas).toBe(4); // 阳光小区 / 王家宅 / 万达广场 / 未分类区域
     expect(tree.stats.persons).toBe(6);
 
-    const sun = tree.areas.find((c) => c.kind === "community" && c.name === "阳光小区")!;
-    expect(sun.buildingCount).toBe(2); // 1栋, 2栋
-    expect(sun.personCount).toBe(4);
-    const b1 = sun.buildings.find((b) => b.name === "1栋")!;
-    expect(b1.roomCount).toBe(2); // 101室, 102室
-    const r101 = b1.rooms.find((r) => r.name === "101室")!;
-    expect(r101.personCount).toBe(2); // 张三、李四
-    expect(r101.persons.map((p) => p.reporter).sort()).toEqual(["张三", "李四"]);
+    // POI:人员直接挂区域,无楼栋/室号
+    const poi = tree.areas.find((a) => a.kind === "poi" && a.name === "万达广场")!;
+    expect(poi.persons).toHaveLength(1);
+    expect(poi.persons[0]!.reporter).toBe("甲");
+    expect(poi.buildings).toHaveLength(0);
+    expect(poi.units).toHaveLength(0);
 
-    // 仅路名 / 全空 → 归入「未分类区域」,绝不暴露路名作为小区
+    // 村:队组平行单元,单人在 队/组 各出现一次,区域去重人员数为 2
+    const vil = tree.areas.find((a) => a.kind === "village" && a.name === "王家宅")!;
+    expect(vil.units.map((u) => `${u.unitKind}::${u.name}`).sort()).toEqual(
+      ["group::3组", "team::1队"].sort(),
+    );
+    // 队「1队」含 乙、丙(2 人);组「3组」含 甲(1 人)
+    const t1 = vil.units.find((u) => u.unitKind === "team" && u.name === "1队")!;
+    expect(t1.personCount).toBe(2);
+    expect(t1.persons.map((p) => p.reporter).sort()).toEqual(["丙", "乙"]);
+    const g3 = vil.units.find((u) => u.unitKind === "group" && u.name === "3组")!;
+    expect(g3.personCount).toBe(1);
+    // 乙 同时带 队+组,故组「3组」下挂的是 乙(甲 属于 POI,不在村)
+    expect(g3.persons[0]!.reporter).toBe("乙");
+    // 村区域去重人员数 = {乙,丙} = 2
+    expect(vil.personCount).toBe(2);
+    // 队组计入 buildingCount(stats 把队组视作"栋")
+    expect(vil.buildingCount).toBe(2);
+
+    // 小区:楼栋 → 室号 → 人员
+    const sun = tree.areas.find((c) => c.kind === "community" && c.name === "阳光小区")!;
+    expect(sun.buildingCount).toBe(1);
+    expect(sun.roomCount).toBe(1);
+    expect(sun.personCount).toBe(2);
+    const r101 = sun.buildings[0]!.rooms[0]!;
+    expect(r101.name).toBe("101室");
+    expect(r101.personCount).toBe(2); // 丁、戊
+    expect(r101.persons.map((p) => p.reporter).sort()).toEqual(["丁", "戊"]);
+
+    // 仅路名 → 未分类区域(绝不暴露路名作为小区)
     const uncat = tree.areas.find((c) => c.name === "未分类区域")!;
     expect(uncat.kind).toBe("community");
-    expect(uncat.personCount).toBe(2); // 钱七(路名) + 孙八(全空)
-    expect(uncat.buildings[0]!.name).toBe("未编号楼栋");
-    expect(uncat.buildings[0]!.rooms[0]!.name).toBe("未编号室号");
-    // 路名不得作为小区名出现
-    expect(tree.areas.some((c) => c.name === "南京西路")).toBe(false);
+    expect(uncat.buildingCount).toBe(1); // 未编号楼栋
+    expect(tree.areas.some((c) => c.name === "双柏路")).toBe(false);
   });
 
   it("小区按人数降序排列", () => {
     const tree = buildPersonHouseTree(entries);
-    expect(tree.areas[0]!.name).toBe("阳光小区"); // 4 人最多
+    const communities = tree.areas.filter((a) => a.kind === "community");
+    expect(communities[0]!.name).toBe("阳光小区"); // 2 人最多
   });
 
-  it("poi / village 暂时隐藏,统一归入未分类区域(路名不得冒充小区)", () => {
+  it("POI / 村 名称作为独立区域出现(不再并入未分类)", () => {
     const tree = buildPersonHouseTree([
-      ent("1", "甲", { poi: "万达广场", building: "A座", room: "305室" }),
-      ent("2", "乙", { village: "王家宅", building: "3号", room: "2室" }),
-      ent("3", "丙", { community: "阳光小区", building: "1栋", room: "101室" }),
-      // 同名:POI「中心」与 小区「中心」——POI 并入未分类,小区保留
-      ent("4", "丁", { poi: "中心", building: "1栋", room: "101室" }),
-      ent("5", "戊", { community: "中心", building: "2栋", room: "202室" }),
+      ent("1", "甲", { poi: "万达广场" }),
+      ent("2", "乙", { village: "王家宅", team: "2队" }),
+      ent("3", "丙", { community: "阳光小区" }),
     ]);
-    const kinds = tree.areas.map((a) => `${a.kind}::${a.name}`).sort();
-    expect(kinds).toEqual(
-      ["community::未分类区域", "community::中心", "community::阳光小区"].sort(),
+    const names = tree.areas.map((a) => `${a.kind}::${a.name}`).sort();
+    expect(names).toEqual(
+      ["community::阳光小区", "poi::万达广场", "village::王家宅"].sort(),
     );
-    // 「中心」只保留小区节点(POI 的并入未分类),故仅 1 个
-    expect(tree.areas.filter((a) => a.name === "中心").length).toBe(1);
-    // poi / village 名称不得作为区域出现
-    expect(tree.areas.some((a) => a.name === "万达广场" || a.name === "王家宅")).toBe(false);
   });
 
   it("仅含路名的地址不能冒充小区", () => {
@@ -250,6 +243,35 @@ describe("buildPersonHouseTree", () => {
     expect(tree.areas).toHaveLength(1);
     expect(tree.areas[0]!.name).toBe("未分类区域");
     expect(tree.areas[0]!.kind).toBe("community");
+  });
+
+  it("增量合并(前端分页累积 entries 后重建)与一次性 build 结果一致", () => {
+    const page1 = entries.slice(0, 3);
+    const page2 = entries.slice(3);
+
+    // 模拟前端:逐页累积 entries,每页 build 一次
+    let acc: PersonHouseEntry[] = [];
+    let incremental: ReturnType<typeof buildPersonHouseTree> | null = null;
+    for (const page of [page1, page2]) {
+      acc = [...acc, ...page];
+      incremental = buildPersonHouseTree(acc);
+    }
+    // 一次性 build
+    const once = buildPersonHouseTree(entries);
+
+    expect(incremental!.stats.areas).toBe(once.stats.areas);
+    expect(incremental!.stats.persons).toBe(once.stats.persons);
+    expect(incremental!.stats.buildings).toBe(once.stats.buildings);
+    expect(incremental!.stats.rooms).toBe(once.stats.rooms);
+    expect(
+      incremental!.areas
+        .map((a) => `${a.kind}::${a.name}`)
+        .sort(),
+    ).toEqual(
+      once.areas
+        .map((a) => `${a.kind}::${a.name}`)
+        .sort(),
+    );
   });
 
   it("空输入 → 空树", () => {
@@ -277,4 +299,3 @@ function ent(
   };
   return { person: row, fields };
 }
-

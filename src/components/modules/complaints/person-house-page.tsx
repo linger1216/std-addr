@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { FlaskConical, Search } from "lucide-react";
+import { useRef, useState } from "react";
+import { FlaskConical } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -18,132 +18,173 @@ import { DateRangePicker, type DateRangeValue } from "@/components/ui/date-range
 
 import { api } from "@/trpc/react";
 import { PersonHouseTree } from "./complaints-components";
-import { ComplaintsListTable } from "./complaints-list-table";
+import {
+  buildPersonHouseTree,
+  type AddrFields,
+  type PersonHouseEntry,
+  type PersonRow,
+  type PersonHouseTree as PersonHouseTreeData,
+} from "@/server/api/routers/complains-logic";
 
 type Filters = {
   startDate?: string;
   endDate?: string;
   streetName?: string;
-  gridName?: string;
-  caseBigType?: string;
-  caseSmallType?: string;
-  caseSubType?: string;
 };
+
+const PAGE_SIZE = 200;
+const ML_BATCH_SIZE = 500;
 
 export function PersonHousePage() {
   const [range, setRange] = useState<DateRangeValue>({});
   const [streetName, setStreetName] = useState("");
-  const [gridName, setGridName] = useState("");
-  const [caseBigType, setCaseBigType] = useState("");
-  const [caseSmallType, setCaseSmallType] = useState("");
-  const [caseSubType, setCaseSubType] = useState("");
-  // applied: 已「查询」的筛选条件(驱动诉件列表);treeApplied: 已「分析」的筛选条件(驱动人房树)
-  const [applied, setApplied] = useState<Filters | null>(null);
-  const [treeApplied, setTreeApplied] = useState<Filters | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
 
-  // 街镇 / 网格 下拉数据:网格随街镇联动(带上 streetName 即只返回该镇下属网格)
-  // 案件分类级联:小类随大类、子类随大类+小类
-  // placeholderData 保留上一次结果:切换街镇时,网格选项不会因慢查询而短暂清空(导致"选了街镇网格不显示")
-  const options = api.complains.filterOptions.useQuery(
-    {
-      streetName: streetName || undefined,
-      caseBigType: caseBigType || undefined,
-      caseSmallType: caseSmallType || undefined,
-    },
-    { placeholderData: (prev) => prev },
-  );
+  // 前端自管的人房树数据 / 进度 / 运行状态
+  const [treeData, setTreeData] = useState<PersonHouseTreeData | null>(null);
+  const [treeProgress, setTreeProgress] = useState<{
+    processed: number;
+    total: number;
+  } | null>(null);
+  const [treeRunning, setTreeRunning] = useState(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
+
+  // 取消令牌:每次「分析」自增,旧轮询检测到序列变化即中止,避免并发/重复渲染
+  const analyzeSeqRef = useRef(0);
+
+  const utils = api.useUtils();
+
+  // 街镇下拉数据(仅街镇)
+  const options = api.complains.filterOptions.useQuery(undefined, {
+    placeholderData: (prev) => prev,
+  });
   const streetOptions: SearchSelectOption[] = (options.data?.streets ?? []).map(
     (s) => ({ value: s, label: s }),
   );
-  const gridOptions: SearchSelectOption[] = (options.data?.grids ?? []).map(
-    (g) => ({ value: g, label: g }),
-  );
-  const bigTypeOptions: SearchSelectOption[] = (options.data?.bigTypes ?? []).map(
-    (s) => ({ value: s, label: s }),
-  );
-  const smallTypeOptions: SearchSelectOption[] = (options.data?.smallTypes ?? []).map(
-    (s) => ({ value: s, label: s }),
-  );
-  const subTypeOptions: SearchSelectOption[] = (options.data?.subTypes ?? []).map(
-    (s) => ({ value: s, label: s }),
-  );
 
-  const listQuery = api.complains.list.useQuery(
-    {
-      startDate: applied?.startDate,
-      endDate: applied?.endDate,
-      streetName: applied?.streetName,
-      gridName: applied?.gridName,
-      caseBigType: applied?.caseBigType,
-      caseSmallType: applied?.caseSmallType,
-      caseSubType: applied?.caseSubType,
-      page,
-      pageSize,
-    },
-    { enabled: applied !== null },
-  );
-
-  const treeQuery = api.complains.personHouseTree.useQuery(
-    treeApplied ?? { startDate: undefined, endDate: undefined },
-    { enabled: treeApplied !== null },
-  );
-
-  // 由当前控件值组装筛选条件
   function buildFilters(): Filters {
     return {
       startDate: range.from,
       endDate: range.to,
       streetName: streetName || undefined,
-      gridName: gridName || undefined,
-      caseBigType: caseBigType || undefined,
-      caseSmallType: caseSmallType || undefined,
-      caseSubType: caseSubType || undefined,
     };
   }
 
-  // 查询:只加载诉件列表
-  function runSearch() {
-    setPage(1);
-    setApplied(buildFilters());
+  function toPerson(it: {
+    taskId: string;
+    reporter: string;
+    contactInfo: string;
+    address: string;
+    stdAddress: string;
+    cgType: string;
+    discoverTime: string;
+    streetName: string;
+  }): PersonRow {
+    return {
+      taskId: it.taskId,
+      reporter: it.reporter,
+      contactInfo: it.contactInfo,
+      address: it.address,
+      stdAddress: it.stdAddress,
+      discoverTime: it.discoverTime,
+      cgType: it.cgType,
+      streetName: it.streetName,
+    };
   }
 
-  // 分析:在诉件列表之上构建人房树(同时保证列表已按当前筛选加载)
-  function runAnalyze() {
+  /**
+   * 前端人房分析:按 时间 + 街镇 分页拉取全部诉件 → 逐条地址批量调 mlFieldsBatch
+   * → 合并进大对象 → buildPersonHouseTree → 实时渲染(setTreeData 每页重建一次)。
+   * 不落库、无动画;模型不可达时 mlFieldsBatch 降级空字段,树退化为未分类区域。
+   */
+  async function runAnalyze() {
     const f = buildFilters();
-    setPage(1);
-    setApplied(f);
-    setTreeApplied(f);
+    const seq = analyzeSeqRef.current + 1;
+    analyzeSeqRef.current = seq;
+
+    setTreeRunning(true);
+    setTreeError(null);
+    setTreeData(null);
+    setTreeProgress({ processed: 0, total: 0 });
+
+    const entries: PersonHouseEntry[] = [];
+    try {
+      let page = 1;
+      let total = 0;
+      let more = true;
+      while (more) {
+        if (analyzeSeqRef.current !== seq) return; // 被新一轮分析取消
+        const res = await utils.complains.list.fetch({
+          startDate: f.startDate,
+          endDate: f.endDate,
+          streetName: f.streetName,
+          page,
+          pageSize: PAGE_SIZE,
+        });
+        if (page === 1) total = res.total;
+
+        // 仅取非匿名(reporter 非空)的诉件作为"人";其余跳过(无人员信息)
+        const rows = res.items
+          .filter((it) => it.reporter?.trim())
+          .map((it) => ({
+            person: toPerson(it),
+            addr: (it.stdAddress || it.address).trim(),
+          }));
+
+        // 收集非空地址,按 ML_BATCH_SIZE 分批调用(返回顺序与入参一一对应)
+        const addrList = rows.map((r) => r.addr).filter(Boolean);
+        const fieldsByAddr = new Map<string, AddrFields>();
+        for (let i = 0; i < addrList.length; i += ML_BATCH_SIZE) {
+          if (analyzeSeqRef.current !== seq) return;
+          const batch = addrList.slice(i, i + ML_BATCH_SIZE);
+          const fieldsArr = await utils.complains.mlFieldsBatch.fetch({
+            addresses: batch,
+          });
+          batch.forEach((a, j) => fieldsByAddr.set(a, fieldsArr[j] ?? {}));
+        }
+
+        for (const r of rows) {
+          const fields = r.addr ? (fieldsByAddr.get(r.addr) ?? {}) : {};
+          entries.push({ person: r.person, fields });
+        }
+
+        const processed = Math.min(page * PAGE_SIZE, total);
+        setTreeProgress({ processed, total });
+        setTreeData(buildPersonHouseTree(entries));
+
+        if (page * PAGE_SIZE >= total || res.items.length === 0) more = false;
+        else page += 1;
+      }
+      setTreeRunning(false);
+    } catch (err) {
+      if (analyzeSeqRef.current !== seq) return;
+      setTreeRunning(false);
+      setTreeError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   function resetAll() {
+    analyzeSeqRef.current += 1; // 取消进行中的分析
     setRange({});
     setStreetName("");
-    setGridName("");
-    setCaseBigType("");
-    setCaseSmallType("");
-    setCaseSubType("");
-    setApplied(null);
-    setTreeApplied(null);
-    setPage(1);
+    setTreeData(null);
+    setTreeProgress(null);
+    setTreeRunning(false);
+    setTreeError(null);
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="人房关联"
-        description="按时间窗口 + 街镇/网格名称筛选后「查询」诉件列表;点击列表上方的「分析」,对诉求人地址用模型接口解析,聚合成 区域(小区/POI/村) → 楼栋 → 室号 → 人员 的树(不落库)。"
+        description="按时间窗口 + 街镇筛选后点击「分析」:前端拉取该条件下全部诉件,逐条用模型接口解析地址,
+          聚合成 区域(小区/村/POI) → 楼栋/队组 → 室号 → 人员 的树(纯前端渲染,不落库)。"
       />
 
-      {/* 筛选:搜索 → 诉件列表 */}
+      {/* 筛选:时间 + 街镇 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">筛选</CardTitle>
-          <CardDescription>
-            时间窗口 + 街镇/网格名称 + 案件大类/小类/子类。先选街镇,网格名称会随街镇联动;案件分类按
-            大类 → 小类 → 子类 级联。
-          </CardDescription>
+          <CardDescription>时间窗口 + 街镇。点击「分析」即按当前条件构建人房树。</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-end gap-3">
@@ -160,168 +201,53 @@ export function PersonHousePage() {
               <p className="text-xs text-muted-foreground">街镇</p>
               <SearchSelect
                 value={streetName || undefined}
-                onValueChange={(v) => {
-                  setStreetName(v);
-                  setGridName(""); // 街镇变化,清空并联动网格选项
-                }}
+                onValueChange={setStreetName}
                 options={streetOptions}
                 placeholder="选择街镇"
-                triggerClassName="h-9 w-44"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">网格名称(片区)</p>
-              <SearchSelect
-                value={gridName || undefined}
-                onValueChange={setGridName}
-                options={gridOptions}
-                placeholder={streetName ? "选择网格" : "请先选街镇"}
-                disabled={!streetName}
                 loading={options.isFetching}
                 triggerClassName="h-9 w-44"
               />
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">案件大类</p>
-              <SearchSelect
-                value={caseBigType || undefined}
-                onValueChange={(v) => {
-                  setCaseBigType(v);
-                  setCaseSmallType(""); // 大类变化,清空并联动小类/子类
-                  setCaseSubType("");
-                }}
-                options={bigTypeOptions}
-                placeholder="选择大类"
-                loading={options.isFetching}
-                triggerClassName="h-9 w-44"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">案件小类</p>
-              <SearchSelect
-                value={caseSmallType || undefined}
-                onValueChange={(v) => {
-                  setCaseSmallType(v);
-                  setCaseSubType(""); // 小类变化,清空并联动子类
-                }}
-                options={smallTypeOptions}
-                placeholder={caseBigType ? "选择小类" : "请先选大类"}
-                disabled={!caseBigType}
-                loading={options.isFetching}
-                triggerClassName="h-9 w-44"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">案件子类</p>
-              <SearchSelect
-                value={caseSubType || undefined}
-                onValueChange={setCaseSubType}
-                options={subTypeOptions}
-                placeholder={caseSmallType ? "选择子类" : "请先选小类"}
-                disabled={!caseSmallType}
-                loading={options.isFetching}
-                triggerClassName="h-9 w-44"
-              />
-            </div>
-
-            <Button
-              onClick={runSearch}
-              disabled={options.isFetching || listQuery.isFetching}
-            >
-              {listQuery.isFetching ? (
+            <Button onClick={runAnalyze} disabled={treeRunning}>
+              {treeRunning ? (
                 <Spinner className="mr-1 size-4" />
               ) : (
-                <Search className="mr-1 size-4" />
+                <FlaskConical className="mr-1 size-4" />
               )}
-              查询
+              {treeRunning ? "分析中…" : "分析"}
             </Button>
-            <Button variant="outline" onClick={resetAll}>
+            <Button variant="outline" onClick={resetAll} disabled={treeRunning}>
               重置
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* 诉件列表:头部「分析」按钮,点击后上方人房树出现 */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
-          <div className="space-y-1">
-            <CardTitle className="text-base">诉件列表</CardTitle>
-            <CardDescription>
-              {applied === null
-                ? "设置筛选条件后点击「查询」查看诉件分页列表。"
-                : listQuery.isFetching
-                  ? "正在加载诉件列表…"
-                  : `共 ${listQuery.data?.total ?? 0} 条诉件。`}
-            </CardDescription>
-          </div>
-          <Button
-            onClick={runAnalyze}
-            disabled={options.isFetching || treeQuery.isFetching}
-          >
-            {treeQuery.isFetching ? (
-              <Spinner className="mr-1 size-4" />
-            ) : (
-              <FlaskConical className="mr-1 size-4" />
-            )}
-            分析
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {applied === null && (
-            <p className="text-sm text-muted-foreground">尚未查询。</p>
-          )}
-          {listQuery.isError && (
-            <p className="text-sm text-destructive">
-              加载失败:{listQuery.error.message}
-            </p>
-          )}
-          {listQuery.data && (
-            <ComplaintsListTable
-              items={listQuery.data.items}
-              total={listQuery.data.total}
-              page={listQuery.data.page}
-              pageSize={listQuery.data.pageSize}
-              onPageChange={setPage}
-              onPageSizeChange={(s) => {
-                setPageSize(s);
-                setPage(1);
-              }}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 人房树:点击「分析」后才出现,位于诉件列表下方 */}
+      {/* 人房树 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">人房树</CardTitle>
           <CardDescription>
-            {treeApplied === null
-              ? "设置筛选条件后,点击上方「诉件列表」头部的「分析」生成人房树。"
-              : treeQuery.isFetching
-                ? "正在解析地址并构建人房树…"
-                : `共 ${treeQuery.data?.stats.areas ?? 0} 个区域 / ${treeQuery.data?.stats.buildings ?? 0} 栋 / ${treeQuery.data?.stats.persons ?? 0} 名人员。`}
+            {treeData
+              ? `共 ${treeData.stats.areas} 个区域 / ${treeData.stats.buildings} 栋(含村队组) / ${treeData.stats.rooms} 室号 / ${treeData.stats.persons} 名人员。`
+              : treeRunning
+                ? treeProgress
+                  ? `正在解析地址并构建人房树…(已分析 ${treeProgress.processed}/${treeProgress.total})`
+                  : "正在解析地址并构建人房树…"
+                : "设置筛选条件后点击「分析」生成人房树。"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {treeApplied === null && (
+          {!treeRunning && !treeData && !treeError && (
             <p className="text-sm text-muted-foreground">尚未分析。</p>
           )}
-          {treeQuery.isError && (
-            <p className="text-sm text-destructive">
-              分析失败:{treeQuery.error.message}
-            </p>
+          {treeError && (
+            <p className="text-sm text-destructive">分析失败:{treeError}</p>
           )}
-          {treeQuery.data && <PersonHouseTree tree={treeQuery.data} />}
+          {treeData && <PersonHouseTree tree={treeData} />}
         </CardContent>
       </Card>
-
-
     </div>
   );
 }
