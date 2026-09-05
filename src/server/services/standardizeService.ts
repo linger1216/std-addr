@@ -272,13 +272,14 @@ async function readMlUrl(): Promise<string> {
  * (拼接出仅含规则字段的标准地址);仅 HTTP/网络层面失败才抛错,
  * 由调用方按单条错误收集。
  */
-async function mlParse(cleaned: string): Promise<StdFields> {
+async function mlParse(cleaned: string, timeoutMs = 30000): Promise<StdFields> {
   const url = await readMlUrl();
   const base = url.replace(/\/+$/, "");
   const res = await fetch(
     `${base}/api/format?address=${encodeURIComponent(cleaned)}`,
-    // 旧架构 axios 超时 30s(模型冷启动/长地址耗时);10s 会误杀
-    { signal: AbortSignal.timeout(30000) },
+    // 默认 30s 与旧架构 axios 超时对齐(模型冷启动/长地址耗时);
+    // 人房关联路径会传入较短超时,模型不可达时快速失败,避免整棵分析一直 pending
+    { signal: AbortSignal.timeout(timeoutMs) },
   );
   if (!res.ok) throw new Error(`模型服务异常:HTTP ${res.status}`);
   const body = (await res.json()) as {
@@ -919,13 +920,13 @@ class StandardizeService {
    * 人房关联树用:不需要标准地址库(region/community/subarea/poi/village 匹配 + 评分),
    * 直接拿模型解析出的层级要素即可。`mlParse` 仅做一次轻量 sysSetting 读 + /api/format 拉取。
    */
-  async mlFields(rawAddress: string): Promise<StdFields> {
+  async mlFields(rawAddress: string, timeoutMs?: number): Promise<StdFields> {
     // 去逗号:标准化生成的 std_address 常在弄号段间插入逗号(如 "229弄,22弄602室"),
     // 会截断 ML 解析、导致室号/楼栋丢失;去掉后室号可正常识别。
     const cleaned = preprocessRaw(rawAddress).replace(/[，,]/g, "");
     if (!cleaned.trim()) return {};
     try {
-      const fields = await mlParse(cleaned);
+      const fields = await mlParse(cleaned, timeoutMs);
       // 兜底:ML 未识别室号,但 building 含「室」(如 "22弄602室"),把室号从 building 拆出
       if (!fields.room?.trim() && fields.building?.includes("室")) {
         const m = /^(.*?)(\d+室.*)$/.exec(fields.building);

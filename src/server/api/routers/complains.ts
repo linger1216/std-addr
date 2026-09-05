@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { standardizeService } from "@/server/services/standardizeService";
@@ -11,6 +12,7 @@ import {
   type DupGroup,
   type PersonRow,
   type PersonHouseEntry,
+  type PersonHouseTree,
   type AddrFields,
 } from "./complains-logic";
 
@@ -213,82 +215,112 @@ export const complainsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { whereParts, params } = buildCommonFilter({
-        startDate: input.startDate,
-        endDate: input.endDate,
-        streetName: input.streetName,
-        gridName: input.gridName,
-        caseBigType: input.caseBigType,
-        caseSmallType: input.caseSmallType,
-        caseSubType: input.caseSubType,
-      });
-      whereParts.unshift(`reporter IS NOT NULL AND reporter <> ''`);
-      const w = whereSql(whereParts);
+      // 整体超时兜底:模型/数据库任一环节无响应时,绝不让请求一直 pending,
+      // 超时即返回清晰的 TIMEOUT 错误(客户端显示"分析失败"而非无限转圈)。
+      const OVERALL_TIMEOUT_MS = 90_000;
+      const compute = (async (): Promise<PersonHouseTree> => {
+        const { whereParts, params } = buildCommonFilter({
+          startDate: input.startDate,
+          endDate: input.endDate,
+          streetName: input.streetName,
+          gridName: input.gridName,
+          caseBigType: input.caseBigType,
+          caseSmallType: input.caseSmallType,
+          caseSubType: input.caseSubType,
+        });
+        whereParts.unshift(`reporter IS NOT NULL AND reporter <> ''`);
+        const w = whereSql(whereParts);
 
-      const sql = `
-        SELECT taskid, address, std_address, reporter, contactinfo,
-               cgtype, discovertime, streetname
-        FROM complains ${w}
-        ORDER BY discovertime DESC
-        LIMIT ?
-      `;
-      const raw: Array<{
-        taskid: string;
-        address: string | null;
-        std_address: string | null;
-        reporter: string | null;
-        contactinfo: string | null;
-        cgtype: string | null;
-        discovertime: Date | string | null;
-        streetname: string | null;
-      }> = await ctx.db.$queryRawUnsafe(sql, ...params, input.limit);
+        const sql = `
+          SELECT taskid, address, std_address, reporter, contactinfo,
+                 cgtype, discovertime, streetname
+          FROM complains ${w}
+          ORDER BY discovertime DESC
+          LIMIT ?
+        `;
+        const raw: Array<{
+          taskid: string;
+          address: string | null;
+          std_address: string | null;
+          reporter: string | null;
+          contactinfo: string | null;
+          cgtype: string | null;
+          discovertime: Date | string | null;
+          streetname: string | null;
+        }> = await ctx.db.$queryRawUnsafe(sql, ...params, input.limit);
 
-      const rows: PersonRow[] = raw.map((r) => ({
-        taskId: r.taskid,
-        reporter: r.reporter ?? "",
-        contactInfo: r.contactinfo ?? "",
-        address: r.address ?? "",
-        stdAddress: r.std_address ?? "",
-        discoverTime: r.discovertime
-          ? String(r.discovertime).slice(0, 10)
-          : "",
-        cgType: r.cgtype ?? "",
-        streetName: r.streetname ?? "",
-      }));
+        const rows: PersonRow[] = raw.map((r) => ({
+          taskId: r.taskid,
+          reporter: r.reporter ?? "",
+          contactInfo: r.contactinfo ?? "",
+          address: r.address ?? "",
+          stdAddress: r.std_address ?? "",
+          discoverTime: r.discovertime
+            ? String(r.discovertime).slice(0, 10)
+            : "",
+          cgType: r.cgtype ?? "",
+          streetName: r.streetname ?? "",
+        }));
 
-      // 并发标准化(分块,避免一次性打满模型服务);进程内 LRU 缓存命中重复地址
-      // 人房关联只用 ML 接口:mlFields 直接取模型 NER 要素(小区/POI/村/楼栋/室号/路),
-      // 不进标准地址库(region/community/subarea 匹配 + 评分)。
-      const entries: PersonHouseEntry[] = [];
-      const CONCURRENCY = 8;
-      for (let i = 0; i < rows.length; i += CONCURRENCY) {
-        const chunk = rows.slice(i, i + CONCURRENCY);
-        const res = await Promise.all(
-          chunk.map(async (row): Promise<PersonHouseEntry> => {
-            const inputAddr = row.stdAddress || row.address;
-            let fields: AddrFields = {};
-            if (inputAddr) {
-              try {
-                const std = await standardizeService.mlFields(inputAddr);
-                fields = {
-                  community: std.community,
-                  poi: std.poi,
-                  village: std.village,
-                  building: std.building,
-                  room: std.room,
-                  road: std.road,
-                };
-              } catch {
-                fields = {};
+        // 人房关联只用 ML 接口:mlFields 直接取模型 NER 要素(小区/POI/村/楼栋/室号/路)。
+        // 模型服务不可达时,逐个 30s 超时会把整棵分析拖成"一直 pending";
+        // 故先做一次快速探测:不可达则跳过 ML(树退化为未分类区域,秒回),
+        // 可达则逐条用较短超时(8s),避免单条卡死拖垮整体。
+        const ML_PROBE_TIMEOUT = 6000;
+        const ML_PER_CALL_TIMEOUT = 8000;
+        let mlAvailable = true;
+        try {
+          await standardizeService.mlFields("探测", ML_PROBE_TIMEOUT);
+        } catch {
+          mlAvailable = false;
+        }
+
+        // 并发标准化(分块,避免一次性打满模型服务);进程内 LRU 缓存命中重复地址
+        const entries: PersonHouseEntry[] = [];
+        const CONCURRENCY = 8;
+        for (let i = 0; i < rows.length; i += CONCURRENCY) {
+          const chunk = rows.slice(i, i + CONCURRENCY);
+          const res = await Promise.all(
+            chunk.map(async (row): Promise<PersonHouseEntry> => {
+              const inputAddr = row.stdAddress || row.address;
+              let fields: AddrFields = {};
+              if (inputAddr && mlAvailable) {
+                try {
+                  const std = await standardizeService.mlFields(inputAddr, ML_PER_CALL_TIMEOUT);
+                  fields = {
+                    community: std.community,
+                    poi: std.poi,
+                    village: std.village,
+                    building: std.building,
+                    room: std.room,
+                    road: std.road,
+                  };
+                } catch {
+                  fields = {};
+                }
               }
-            }
-            return { person: row, fields };
-          }),
-        );
-        entries.push(...res);
-      }
+              return { person: row, fields };
+            }),
+          );
+          entries.push(...res);
+        }
 
-      return buildPersonHouseTree(entries);
+        return buildPersonHouseTree(entries);
+      })();
+
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new TRPCError({
+                code: "TIMEOUT",
+                message: "人房分析超时:模型或数据库未响应,请稍后重试。",
+              }),
+            ),
+          OVERALL_TIMEOUT_MS,
+        ),
+      );
+      return await Promise.race([compute, timeout]);
     }),
 
   /**
