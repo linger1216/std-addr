@@ -224,7 +224,10 @@ export const complainsRouter = createTRPCRouter({
    */
   mlFieldsBatch: protectedProcedure
     .input(z.object({ addresses: z.array(z.string()).max(500) }))
-    .query(async ({ input }) => {
+    // 必须是 mutation(而非 query):地址批量入参可达 500 条,若用 query 会塞进 GET URL,
+    // 超过服务端 URI 长度上限返回 431(空响应体)→ 浏览器 res.json() 抛 "Unexpected end of JSON input"。
+    // mutation 走 POST,入参在请求体,无 URL 长度限制。
+    .mutation(async ({ input }) => {
       const ML_TIMEOUT = 60000;
       const fields = await standardizeService.mlFieldsBatch(
         input.addresses,

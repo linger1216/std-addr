@@ -59,6 +59,9 @@ export function PersonHousePage() {
 
   const utils = api.useUtils();
 
+  // 人房分析批量解析模型要素:必须是 mutation(POST),不能走 query(GET 会把几百条地址塞进 URL 超限)
+  const mlFieldsBatch = api.complains.mlFieldsBatch.useMutation();
+
   // 街镇下拉数据(仅街镇)
   const options = api.complains.filterOptions.useQuery(undefined, {
     placeholderData: (prev) => prev,
@@ -161,7 +164,7 @@ export function PersonHousePage() {
         for (let i = 0; i < addrList.length; i += ML_BATCH_SIZE) {
           if (analyzeSeqRef.current !== seq) return;
           const batch = addrList.slice(i, i + ML_BATCH_SIZE);
-          const fieldsArr = await utils.complains.mlFieldsBatch.fetch({
+          const fieldsArr = await mlFieldsBatch.mutateAsync({
             addresses: batch,
           });
           batch.forEach((a, j) => fieldsByAddr.set(a, fieldsArr[j] ?? {}));
