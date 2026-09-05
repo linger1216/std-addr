@@ -218,31 +218,30 @@ export const complainsRouter = createTRPCRouter({
 
   /**
    * 批量标准地址解析(仅取模型 NER 要素,不做 DB 实体匹配)。前端人房关联对每页诉件
-   * 收集地址后批量调用,合并进前端大对象。单批上限 500 条;每条短超时快速失败,
-   * 模型不可达时返回空字段(前端退化为未分类区域)。注意:返回顺序与入参地址一一对应。
+   * 收集地址后批量调用,合并进前端大对象。单批上限 500 条;底层走模型 `POST /api/batch_format`
+   * 一次吞吐整批(避免逐条串行请求压垮单进程模型服务),单批整体超时;模型不可达时整批降级为空字段
+   * (前端退化为未分类区域)。返回顺序与入参地址一一对应。
    */
   mlFieldsBatch: protectedProcedure
     .input(z.object({ addresses: z.array(z.string()).max(500) }))
     .query(async ({ input }) => {
-      const ML_TIMEOUT = 8000;
-      return Promise.all(
-        input.addresses.map(async (addr) => {
-          try {
-            const f = await standardizeService.mlFields(addr, ML_TIMEOUT);
-            return {
-              community: f.community,
-              poi: f.poi,
-              village: f.village,
-              building: f.building,
-              room: f.room,
-              road: f.road,
-              team: f.team,
-              group: f.group,
-            } satisfies AddrFields;
-          } catch {
-            return {} satisfies AddrFields;
-          }
-        }),
+      const ML_TIMEOUT = 60000;
+      const fields = await standardizeService.mlFieldsBatch(
+        input.addresses,
+        ML_TIMEOUT,
+      );
+      return fields.map(
+        (f) =>
+          ({
+            community: f.community,
+            poi: f.poi,
+            village: f.village,
+            building: f.building,
+            room: f.room,
+            road: f.road,
+            team: f.team,
+            group: f.group,
+          }) satisfies AddrFields,
       );
     }),
 });

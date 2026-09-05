@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FlaskConical } from "lucide-react";
+import { FlaskConical, Search } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { DateRangePicker, type DateRangeValue } from "@/components/ui/date-range
 
 import { api } from "@/trpc/react";
 import { PersonHouseTree } from "./complaints-components";
+import { ComplaintsListTable, type ComplaintsListItem } from "./complaints-list-table";
 import {
   buildPersonHouseTree,
   type AddrFields,
@@ -38,6 +39,11 @@ const ML_BATCH_SIZE = 500;
 export function PersonHousePage() {
   const [range, setRange] = useState<DateRangeValue>({});
   const [streetName, setStreetName] = useState("");
+
+  // 已「查询」的筛选条件(驱动诉件列表);树分析复用同一条件
+  const [applied, setApplied] = useState<Filters | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   // 前端自管的人房树数据 / 进度 / 运行状态
   const [treeData, setTreeData] = useState<PersonHouseTreeData | null>(null);
@@ -61,12 +67,30 @@ export function PersonHousePage() {
     (s) => ({ value: s, label: s }),
   );
 
+  // 诉件列表:按 时间 + 街镇 分页(前端分析时再逐页全量拉取 + 调 ML)
+  const listQuery = api.complains.list.useQuery(
+    {
+      startDate: applied?.startDate,
+      endDate: applied?.endDate,
+      streetName: applied?.streetName,
+      page,
+      pageSize,
+    },
+    { enabled: applied !== null },
+  );
+
   function buildFilters(): Filters {
     return {
       startDate: range.from,
       endDate: range.to,
       streetName: streetName || undefined,
     };
+  }
+
+  // 查询:只加载诉件列表(分页)
+  function runSearch() {
+    setPage(1);
+    setApplied(buildFilters());
   }
 
   function toPerson(it: {
@@ -97,7 +121,8 @@ export function PersonHousePage() {
    * 不落库、无动画;模型不可达时 mlFieldsBatch 降级空字段,树退化为未分类区域。
    */
   async function runAnalyze() {
-    const f = buildFilters();
+    // 分析当前已查询的筛选条件(列表分页用的同一条件)
+    const f = applied ?? buildFilters();
     const seq = analyzeSeqRef.current + 1;
     analyzeSeqRef.current = seq;
 
@@ -166,6 +191,8 @@ export function PersonHousePage() {
     analyzeSeqRef.current += 1; // 取消进行中的分析
     setRange({});
     setStreetName("");
+    setApplied(null);
+    setPage(1);
     setTreeData(null);
     setTreeProgress(null);
     setTreeRunning(false);
@@ -209,18 +236,61 @@ export function PersonHousePage() {
               />
             </div>
 
-            <Button onClick={runAnalyze} disabled={treeRunning}>
-              {treeRunning ? (
-                <Spinner className="mr-1 size-4" />
-              ) : (
-                <FlaskConical className="mr-1 size-4" />
-              )}
-              {treeRunning ? "分析中…" : "分析"}
+            <Button onClick={runSearch} disabled={treeRunning || listQuery.isFetching}>
+              <Search className="mr-1 size-4" />
+              查询
             </Button>
             <Button variant="outline" onClick={resetAll} disabled={treeRunning}>
               重置
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 诉件列表:头部「分析」按钮,点击后下方人房树出现 */}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+          <div className="space-y-1">
+            <CardTitle className="text-base">诉件列表</CardTitle>
+            <CardDescription>
+              {applied === null
+                ? "设置筛选条件后点击「查询」查看诉件分页列表。"
+                : listQuery.isFetching
+                  ? "正在加载诉件列表…"
+                  : `共 ${listQuery.data?.total ?? 0} 条诉件。`}
+            </CardDescription>
+          </div>
+          <Button onClick={runAnalyze} disabled={treeRunning || (!applied && !streetName && !range.from)}>
+            {treeRunning ? (
+              <Spinner className="mr-1 size-4" />
+            ) : (
+              <FlaskConical className="mr-1 size-4" />
+            )}
+            {treeRunning ? "分析中…" : "分析"}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {applied === null && (
+            <p className="text-sm text-muted-foreground">尚未查询。</p>
+          )}
+          {listQuery.isError && (
+            <p className="text-sm text-destructive">
+              加载失败:{listQuery.error.message}
+            </p>
+          )}
+          {listQuery.data && (
+            <ComplaintsListTable
+              items={listQuery.data.items}
+              total={listQuery.data.total}
+              page={listQuery.data.page}
+              pageSize={listQuery.data.pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          )}
         </CardContent>
       </Card>
 

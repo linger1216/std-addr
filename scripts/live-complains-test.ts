@@ -71,12 +71,12 @@ async function main() {
   const hasArea = batch.some((f) => f.community || f.poi || f.village);
   assert(hasArea, "mlFieldsBatch 至少解析出一处区域要素(小区/POI/村)");
 
-  console.log(`\n=== 5. 前端式人房分析(${firstStreet}, 全量分页 + mlFieldsBatch + buildPersonHouseTree) ===`);
-  const entries: { person: (typeof page1.items)[number]; fields: (typeof batch)[number] }[] = [];
+  console.log(`\n=== 5. 前端式人房分析(${firstStreet}, 分页 + mlFieldsBatch + buildPersonHouseTree) ===`);
+  const MAX_PAGES = 3; // 上限 3 页(600 条)以便快速验证全链路;全量可去掉此限制
+  const entries: { person: (typeof page1.items)[number]; fields: Record<string, string | null | undefined> }[] = [];
   let page = 1;
   let total = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  while (page <= MAX_PAGES) {
     const res = await caller.list({
       streetName: firstStreet,
       page,
@@ -87,7 +87,7 @@ async function main() {
     const addrList = rows
       .map((it) => (it.stdAddress || it.address).trim())
       .filter(Boolean);
-    const fieldsByAddr = new Map<string, (typeof batch)[number]>();
+    const fieldsByAddr = new Map<string, Record<string, string | null | undefined>>();
     for (let i = 0; i < addrList.length; i += ML_BATCH) {
       const sub = addrList.slice(i, i + ML_BATCH);
       const fields = await caller.mlFieldsBatch({ addresses: sub });

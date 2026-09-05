@@ -259,12 +259,22 @@ async function matchSubareaByBuilding(
   return null;
 }
 
-/** 从 sys_setting 读 ML 服务地址 */
+/** 进程内缓存的 ML 服务地址(避免每次解析地址都查 sys_setting;TTL 内复用) */
+let cachedMlUrl: string | null = null;
+let cachedMlUrlAt = 0;
+const ML_URL_TTL_MS = 30_000;
+
+/** 从 sys_setting 读 ML 服务地址(带 30s TTL 缓存,sys_setting 改动后最多 30s 生效) */
 async function readMlUrl(): Promise<string> {
-  return readModelServiceUrl(
+  const now = Date.now();
+  if (cachedMlUrl && now - cachedMlUrlAt < ML_URL_TTL_MS) return cachedMlUrl;
+  const url = await readModelServiceUrl(
     () => db.sysSetting.findMany(),
     process.env.ML_SERVICE_URL,
   );
+  cachedMlUrl = url;
+  cachedMlUrlAt = now;
+  return url;
 }
 
 /** ML 解析:调 NER /api/format(与旧架构 mlService 一致)。
@@ -916,6 +926,92 @@ class StandardizeService {
   }
 
   /**
+   * 兜底:ML 未识别室号,但 building 含「室」(如 "22弄602室"),把室号从 building 拆出。
+   */
+  private applyRoomFallback(fields: StdFields): StdFields {
+    if (!fields.room?.trim() && fields.building?.includes("室")) {
+      const m = /^(.*?)(\d+室.*)$/.exec(fields.building);
+      if (m) {
+        return {
+          ...fields,
+          building: m[1] ? m[1].trim() : undefined,
+          room: m[2]!.trim(),
+        };
+      }
+    }
+    return fields;
+  }
+
+  /**
+   * 人房关联路径专用归一:模型偶把路名(乐中路/星友路)误标为 community。
+   * 以 路/街/大道 结尾的名称不是小区,归位到 road 并清空 community,避免人房树出现「路名冒充小区」。
+   */
+  private sanitizeRoadAsCommunity(fields: StdFields): StdFields {
+    if (fields.community && /(路|街|大道)$/.test(fields.community)) {
+      fields.road ??= fields.community;
+      fields.community = undefined;
+    }
+    return fields;
+  }
+
+  /** 人房关联路径:室号兜底 + 路名不冒充小区 */
+  private normalizeMlFields(fields: StdFields): StdFields {
+    return this.sanitizeRoadAsCommunity(this.applyRoomFallback(fields));
+  }
+
+  /**
+   * 批量解析:单条地址 → 模型 NER 要素(小区/POI/村/楼栋/室号/路),跳过 DB 实体匹配。
+   * 人房关联树用。底层走模型 `POST /api/batch_format`(一次 HTTP 吞吐一批,模型内部按 32 分块推理),
+   * 相比逐条 `GET /api/format` 的 N 次串行请求,大幅降低对单进程模型服务的连接/CPU 冲击,避免雪崩。
+   * 返回顺序与入参地址一一对应;单批整体超时,模型不可达/异常时整批降级为空字段。
+   */
+  async mlFieldsBatch(
+    rawAddresses: string[],
+    timeoutMs = 60000,
+  ): Promise<StdFields[]> {
+    const out: StdFields[] = new Array<StdFields>(rawAddresses.length);
+    const idxs: number[] = [];
+    const payload: string[] = [];
+    rawAddresses.forEach((a, i) => {
+      // 去逗号:标准化生成的 std_address 常在弄号段间插入逗号(如 "229弄,22弄602室"),
+      // 会截断 ML 解析、导致室号/楼栋丢失;去掉后室号可正常识别。
+      const cleaned = preprocessRaw(a).replace(/[，,]/g, "");
+      out[i] = {};
+      if (cleaned.trim()) {
+        idxs.push(i);
+        payload.push(cleaned);
+      }
+    });
+    if (payload.length === 0) return out;
+    try {
+      const base = (await readMlUrl()).replace(/\/+$/, "");
+      const res = await fetch(`${base}/api/batch_format`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: payload }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) throw new Error(`模型服务异常:HTTP ${res.status}`);
+      const body = (await res.json()) as {
+        code?: number;
+        data?: Array<{ address?: string; data?: StdFields | null }>;
+      };
+      if (body.code !== 0 || !Array.isArray(body.data)) {
+        throw new Error("模型批量解析返回异常");
+      }
+      // 模型按入参顺序返回(32 分块拼接),与 payload/idxs 下标对齐
+      body.data.forEach((d, k) => {
+        const origIdx = idxs[k];
+        if (origIdx == null) return;
+        out[origIdx] = this.normalizeMlFields(d.data ?? {});
+      });
+    } catch {
+      // 降级:未填充项保持 {} (已在初始化时置空)
+    }
+    return out;
+  }
+
+  /**
    * 仅取模型 NER 原始要素(小区/POI/村/楼栋/室号/路),跳过 DB 实体匹配。
    * 人房关联树用:不需要标准地址库(region/community/subarea/poi/village 匹配 + 评分),
    * 直接拿模型解析出的层级要素即可。`mlParse` 仅做一次轻量 sysSetting 读 + /api/format 拉取。
@@ -927,18 +1023,7 @@ class StandardizeService {
     if (!cleaned.trim()) return {};
     try {
       const fields = await mlParse(cleaned, timeoutMs);
-      // 兜底:ML 未识别室号,但 building 含「室」(如 "22弄602室"),把室号从 building 拆出
-      if (!fields.room?.trim() && fields.building?.includes("室")) {
-        const m = /^(.*?)(\d+室.*)$/.exec(fields.building);
-        if (m) {
-          return {
-            ...fields,
-            building: m[1] ? m[1].trim() : undefined,
-            room: m[2]!.trim(),
-          };
-        }
-      }
-      return fields;
+      return this.normalizeMlFields(fields);
     } catch {
       return {};
     }
