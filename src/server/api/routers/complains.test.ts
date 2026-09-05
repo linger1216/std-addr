@@ -260,6 +260,57 @@ describe("buildPersonHouseTree", () => {
   });
 });
 
+describe("buildPersonHouseTree 增量重建(前端分块分析)", () => {
+  it("分多批重建与一次性整建结果一致,且节点数单调递增", () => {
+    const all: PersonHouseEntry[] = [
+      ent("p1", "张", { community: "小区A", building: "B1", room: "R1" }),
+      ent("p2", "李", { community: "小区A", building: "B1", room: "R2" }),
+      ent("p3", "王", { community: "小区A", building: "B2", room: "R1" }),
+      ent("p4", "赵", { community: "小区B", building: "B1", room: "R1" }),
+    ];
+    // 整建(等价于分析跑完)
+    const whole = buildPersonHouseTree(all);
+    // 增量:第一批 2 条 → 第二批 3 条 → 第三批全部
+    const b1 = buildPersonHouseTree(all.slice(0, 2));
+    const b2 = buildPersonHouseTree(all.slice(0, 3));
+    const b3 = buildPersonHouseTree(all);
+
+    // 节点数随批次单调递增
+    expect(b1.stats.persons).toBe(2);
+    expect(b2.stats.persons).toBe(3);
+    expect(b3.stats.persons).toBe(4);
+    expect(b1.areas).toHaveLength(1);
+    expect(b2.areas).toHaveLength(1); // 仍未出现小区B
+    expect(b3.areas).toHaveLength(2);
+
+    // 最终增量结果与整建完全一致
+    expect(b3.stats).toEqual(whole.stats);
+    expect(b3.areas.map((a) => a.name).sort()).toEqual(
+      whole.areas.map((a) => a.name).sort(),
+    );
+
+    // 已出现区域的统计稳定(小区A 在 b1 中为 2 人;b3 含 p3 后为 3 人,楼栋数 2)
+    const a1 = b1.areas.find((a) => a.name === "小区A")!;
+    const a3 = b3.areas.find((a) => a.name === "小区A")!;
+    expect(a1.personCount).toBe(2);
+    expect(a3.personCount).toBe(3);
+    expect(a3.buildingCount).toBe(2);
+  });
+
+  it("中途插入新区域不会改掉已有区域的排序/统计", () => {
+    const step1 = buildPersonHouseTree([
+      ent("p1", "张", { community: "小区A", building: "B1", room: "R1" }),
+    ]);
+    const step2 = buildPersonHouseTree([
+      ent("p1", "张", { community: "小区A", building: "B1", room: "R1" }),
+      ent("p2", "李", { community: "小区B", building: "B1", room: "R1" }),
+    ]);
+    const aA = step2.areas.find((a) => a.name === "小区A")!;
+    expect(aA.personCount).toBe(1); // 小区A 没被小区B 插入影响
+    expect(step1.areas[0]!.name).toBe(step2.areas[0]!.name); // 排序稳定
+  });
+});
+
 function ent(
   taskId: string,
   reporter: string,
