@@ -1,7 +1,6 @@
 "use client";
 
 import { Building2, DoorOpen, User, MapPin, ChevronRight, Search } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -203,111 +202,91 @@ export function PersonHouseTree({ tree }: { tree: PersonHouseTree }) {
       </div>
 
       <div className="space-y-2">
-        <AnimatePresence initial={false}>
-          {tree.areas.map((c) => {
-            const meta = AREA_META[c.kind];
-            const Icon = meta.icon;
-            return (
-              <motion.div
-                key={`${c.kind}::${c.name}`}
-                layout
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                <Collapsible defaultOpen={tree.areas.length <= 8}>
-                  <CollapsibleTrigger className="group flex w-full items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40">
-                    <Icon className={`size-4 shrink-0 ${meta.color}`} />
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                      {meta.label}
-                    </span>
-                    <span className="truncate font-medium">{c.name}</span>
-                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                      <Badge variant="secondary">{c.buildingCount} 栋</Badge>
-                      <Badge variant="secondary">{c.personCount} 人</Badge>
-                      <ChevronRight className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="pl-4 pt-2">
-                    <div className="space-y-2 border-l pl-3">
-                      <AnimatePresence initial={false}>
-                        {c.buildings.map((b) => (
-                          <motion.div
-                            key={b.name}
-                            layout
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            <Collapsible>
-                              <CollapsibleTrigger className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40">
-                                <DoorOpen className="size-4 shrink-0 text-amber-600" />
-                                <span className="truncate text-sm">{b.name}</span>
-                                <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                                  <Badge variant="outline">{b.roomCount} 室</Badge>
-                                  <Badge variant="outline">{b.personCount} 人</Badge>
-                                  <ChevronRight className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                                </div>
+        {tree.areas.map((c) => {
+          const meta = AREA_META[c.kind];
+          const Icon = meta.icon;
+          return (
+            <Collapsible key={`${c.kind}::${c.name}`} defaultOpen={tree.areas.length <= 8}>
+              <CollapsibleTrigger className="group flex w-full items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40">
+                <Icon className={`size-4 shrink-0 ${meta.color}`} />
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  {meta.label}
+                </span>
+                <span className="truncate font-medium">{c.name}</span>
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                  <Badge variant="secondary">{c.buildingCount} 栋</Badge>
+                  <Badge variant="secondary">{c.personCount} 人</Badge>
+                  <ChevronRight className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pl-4 pt-2">
+                <div className="space-y-2 border-l pl-3">
+                  {c.buildings.map((b) => (
+                    <Collapsible key={b.name}>
+                      <CollapsibleTrigger className="group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40">
+                        <DoorOpen className="size-4 shrink-0 text-amber-600" />
+                        <span className="truncate text-sm">{b.name}</span>
+                        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                          <Badge variant="outline">{b.roomCount} 室</Badge>
+                          <Badge variant="outline">{b.personCount} 人</Badge>
+                          <ChevronRight className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="pl-4 pt-1.5">
+                        <div className="space-y-1.5 border-l pl-3">
+                          {b.rooms.map((r) => (
+                            <Collapsible key={r.name}>
+                              <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded px-2 py-1 text-left transition-colors hover:bg-accent/40">
+                                <span className="truncate text-[13px] text-muted-foreground">
+                                  {r.name}
+                                </span>
+                                <Badge variant="secondary" className="ml-auto shrink-0">
+                                  {r.personCount} 人
+                                </Badge>
+                                <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                               </CollapsibleTrigger>
-                              <CollapsibleContent className="pl-4 pt-1.5">
-                                <div className="space-y-1.5 border-l pl-3">
-                                  {b.rooms.map((r) => (
-                                    <Collapsible key={r.name}>
-                                      <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded px-2 py-1 text-left transition-colors hover:bg-accent/40">
-                                        <span className="truncate text-[13px] text-muted-foreground">
-                                          {r.name}
+                              <CollapsibleContent className="pt-1.5">
+                                <div className="grid grid-cols-1 gap-1.5 pl-3 sm:grid-cols-2 lg:grid-cols-3">
+                                  {r.persons.map((p) => (
+                                    <div
+                                      key={p.taskId}
+                                      className="rounded-md border bg-background/60 p-2"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <User className="size-3.5 shrink-0 text-sky-600" />
+                                        <span className="truncate text-sm font-medium">
+                                          {p.reporter}
                                         </span>
-                                        <Badge variant="secondary" className="ml-auto shrink-0">
-                                          {r.personCount} 人
-                                        </Badge>
-                                        <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                                      </CollapsibleTrigger>
-                                      <CollapsibleContent className="pt-1.5">
-                                        <div className="grid grid-cols-1 gap-1.5 pl-3 sm:grid-cols-2 lg:grid-cols-3">
-                                          {r.persons.map((p) => (
-                                            <div
-                                              key={p.taskId}
-                                              className="rounded-md border bg-background/60 p-2"
-                                            >
-                                              <div className="flex items-center gap-1.5">
-                                                <User className="size-3.5 shrink-0 text-sky-600" />
-                                                <span className="truncate text-sm font-medium">
-                                                  {p.reporter}
-                                                </span>
-                                                {p.contactInfo && (
-                                                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                                                    {p.contactInfo}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                                                <MapPin className="size-3 shrink-0" />
-                                                <span className="truncate">{p.address || "—"}</span>
-                                              </div>
-                                              {p.stdAddress && (
-                                                <div className="truncate text-[11px] text-emerald-700 dark:text-emerald-500">
-                                                  {p.stdAddress}
-                                                </div>
-                                              )}
-                                            </div>
-                                          ))}
+                                        {p.contactInfo && (
+                                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                                            {p.contactInfo}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                                        <MapPin className="size-3 shrink-0" />
+                                        <span className="truncate">{p.address || "—"}</span>
+                                      </div>
+                                      {p.stdAddress && (
+                                        <div className="truncate text-[11px] text-emerald-700 dark:text-emerald-500">
+                                          {p.stdAddress}
                                         </div>
-                                      </CollapsibleContent>
-                                    </Collapsible>
+                                      )}
+                                    </div>
                                   ))}
                                 </div>
                               </CollapsibleContent>
                             </Collapsible>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          );
+        })}
       </div>
     </div>
   );
@@ -326,15 +305,7 @@ function StatBadge({ label, value }: { label: string; value: number }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1 text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <motion.span
-        key={value}
-        initial={{ scale: 0.7, opacity: 0.4 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.15 }}
-        className="font-semibold"
-      >
-        {value}
-      </motion.span>
+      <span className="font-semibold">{value}</span>
     </span>
   );
 }
